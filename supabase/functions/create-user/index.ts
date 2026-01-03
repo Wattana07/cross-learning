@@ -119,10 +119,19 @@ Deno.serve(async (req) => {
 
     // Get production site URL (from request or environment)
     // Priority: request body > environment variable > default to Supabase project URL
-    const productionUrl = siteUrl || 
+    let productionUrl = siteUrl || 
       Deno.env.get("SITE_URL") || 
       Deno.env.get("VITE_SITE_URL") ||
       `https://${supabaseUrl.replace('https://', '').replace('.supabase.co', '')}.supabase.co`; // Fallback to project URL
+    
+    // Ensure URL uses HTTPS (security requirement)
+    if (productionUrl && !productionUrl.startsWith('https://')) {
+      productionUrl = productionUrl.replace(/^http:\/\//, 'https://');
+      console.warn('URL was HTTP, converted to HTTPS:', productionUrl);
+    }
+    
+    // Ensure URL doesn't end with slash
+    productionUrl = productionUrl.replace(/\/$/, '');
     
     // Generate password recovery link with proper redirect URL
     let recoveryLink = '';
@@ -251,6 +260,8 @@ ${recoveryLink}
             subject: `ยินดีต้อนรับสู่ระบบ - ตั้งรหัสผ่านของคุณ`,
             html: emailHtml,
             text: emailText,
+            // Disable click tracking to avoid SSL certificate issues
+            click_tracking: false,
           }),
         });
 

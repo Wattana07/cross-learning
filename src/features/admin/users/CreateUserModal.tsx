@@ -75,7 +75,16 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
       const resendApiKey = import.meta.env.VITE_RESEND_API_KEY || 're_DyUTxyKC_8xhyAqT9iamjtqAqbc2k5W5K';
       
       // Get production site URL (for redirect link in email)
-      const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+      // Ensure it uses HTTPS for security
+      let siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+      
+      // Force HTTPS if not already
+      if (siteUrl && !siteUrl.startsWith('https://')) {
+        siteUrl = siteUrl.replace(/^http:\/\//, 'https://');
+      }
+      
+      // Remove trailing slash
+      siteUrl = siteUrl.replace(/\/$/, '');
       
       const { data, error: fnError } = await supabase.functions.invoke('create-user', {
         body: {

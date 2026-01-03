@@ -149,12 +149,20 @@ Deno.serve(async (req) => {
         // Use Resend API Key from request body, or fallback to environment variable
         const apiKey = resendApiKey || Deno.env.get("RESEND_API_KEY") || Deno.env.get("resend_api_key");
         
+        console.log('Resend API Key check:', {
+          hasResendApiKey: !!resendApiKey,
+          hasEnvKey: !!Deno.env.get("RESEND_API_KEY"),
+          hasEnvKeyLower: !!Deno.env.get("resend_api_key"),
+          apiKeyLength: apiKey?.length || 0
+        });
+        
         if (!apiKey) {
           console.error('Resend API Key not provided - cannot send email');
           return new Response(JSON.stringify({ 
             ok: true, 
             userId: newUser.user.id,
             warning: 'User created but email sending failed - Resend API Key not provided',
+            emailError: 'RESEND_API_KEY not found in request body or environment variables'
           }), {
             headers: { 
               "Content-Type": "application/json",
@@ -252,7 +260,8 @@ Deno.serve(async (req) => {
             `.trim();
 
         // Send email directly via Resend API
-        console.log('Sending email directly via Resend API');
+        console.log('Sending email directly via Resend API to:', email);
+        console.log('Email subject:', `ยินดีต้อนรับสู่ระบบ - รหัสผ่านของคุณ`);
         const resendResponse = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
@@ -271,14 +280,21 @@ Deno.serve(async (req) => {
         });
 
         const resendData = await resendResponse.json();
+        
+        console.log('Resend API response status:', resendResponse.status);
+        console.log('Resend API response data:', JSON.stringify(resendData));
 
         if (!resendResponse.ok) {
-          console.error('Resend API error:', resendData);
+          console.error('Resend API error:', {
+            status: resendResponse.status,
+            statusText: resendResponse.statusText,
+            data: resendData
+          });
           return new Response(JSON.stringify({ 
             ok: true, 
             userId: newUser.user.id,
             warning: 'User created but email sending failed',
-            emailError: resendData.message || JSON.stringify(resendData)
+            emailError: `Resend API error (${resendResponse.status}): ${resendData.message || JSON.stringify(resendData)}`
           }), {
             headers: { 
               "Content-Type": "application/json",
@@ -288,6 +304,7 @@ Deno.serve(async (req) => {
         }
 
         console.log('✅ Invitation email sent successfully via Resend:', resendData.id);
+        console.log('Email sent to:', email);
       } catch (emailError: any) {
         console.error('Error sending invitation email:', emailError);
         // Return success but with warning

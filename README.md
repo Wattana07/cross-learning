@@ -36,8 +36,9 @@ VITE_SITE_URL=http://localhost:5173  # สำหรับ development
 ```
 
 **สำหรับ Production**: 
-- **Cloudflare**: ดูคู่มือเฉพาะใน `docs/CLOUDFLARE_SETUP.md` (แนะนำ - ราคาถูกที่สุด)
-- **Vercel/Netlify**: ดูคู่มือทั่วไปใน `docs/DOMAIN_SETUP.md`
+- **Vercel**: ดูคู่มือใน `VERCEL_SETUP.md` (แนะนำ - ง่ายและเร็วที่สุด)
+- **Cloudflare Pages**: ดูคู่มือใน `docs/CLOUDFLARE_SETUP.md`
+- **Netlify**: ดูคู่มือทั่วไปใน `docs/DOMAIN_SETUP.md`
 
 ### 3. Setup Supabase Database
 

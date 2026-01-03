@@ -75,8 +75,22 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
       const resendApiKey = import.meta.env.VITE_RESEND_API_KEY || 're_DyUTxyKC_8xhyAqT9iamjtqAqbc2k5W5K';
       
       // Get production site URL (for redirect link in email)
-      // Ensure it uses HTTPS for security
-      let siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+      // Priority: VITE_SITE_URL > production URL from window.location (only if not localhost)
+      let siteUrl = import.meta.env.VITE_SITE_URL;
+      
+      // If VITE_SITE_URL is not set, use window.location.origin but only if it's not localhost
+      if (!siteUrl) {
+        const origin = window.location.origin;
+        // Only use window.location.origin if it's not localhost (production)
+        if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+          siteUrl = origin;
+        } else {
+          // If localhost, use a default production URL or show error
+          console.error('VITE_SITE_URL is not set and running on localhost. Please set VITE_SITE_URL in environment variables.');
+          // Fallback to a default (you should set this to your actual production URL)
+          siteUrl = 'https://crosslearning.com'; // Fallback - should be set in Vercel env vars
+        }
+      }
       
       // Force HTTPS if not already
       if (siteUrl && !siteUrl.startsWith('https://')) {
@@ -85,6 +99,8 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
       
       // Remove trailing slash
       siteUrl = siteUrl.replace(/\/$/, '');
+      
+      console.log('Using siteUrl for email redirect:', siteUrl);
       
       const { data, error: fnError } = await supabase.functions.invoke('create-user', {
         body: {

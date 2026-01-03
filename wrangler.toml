@@ -1,7 +1,0 @@
-name = "cross-learning"
-compatibility_date = "2024-01-01"
-
-[env.production]
-name = "cross-learning"
-compatibility_date = "2024-01-01"
-

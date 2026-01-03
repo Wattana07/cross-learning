@@ -71,14 +71,38 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Generate temporary password (user will reset it via email)
-    const tempPassword = Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12) + 'A1!';
+    // Generate secure random password
+    // Password format: 12 characters with uppercase, lowercase, numbers, and special characters
+    const generateSecurePassword = () => {
+      const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+      const numbers = '0123456789';
+      const special = '!@#$%^&*';
+      const allChars = uppercase + lowercase + numbers + special;
+      
+      let password = '';
+      // Ensure at least one of each type
+      password += uppercase[Math.floor(Math.random() * uppercase.length)];
+      password += lowercase[Math.floor(Math.random() * lowercase.length)];
+      password += numbers[Math.floor(Math.random() * numbers.length)];
+      password += special[Math.floor(Math.random() * special.length)];
+      
+      // Fill the rest randomly
+      for (let i = password.length; i < 12; i++) {
+        password += allChars[Math.floor(Math.random() * allChars.length)];
+      }
+      
+      // Shuffle the password
+      return password.split('').sort(() => Math.random() - 0.5).join('');
+    };
 
-    // create auth user with temporary password
+    const generatedPassword = generateSecurePassword();
+
+    // create auth user with the generated password
     const { data: newUser, error: authError } = await adminClient.auth.admin.createUser({
       email,
-      password: tempPassword, // Temporary password, user will reset it via email
-      email_confirm: true, // Auto-confirm so user can reset password
+      password: generatedPassword, // Use generated password directly
+      email_confirm: true, // Auto-confirm so user can login immediately
     });
 
     if (authError) {
@@ -117,50 +141,8 @@ Deno.serve(async (req) => {
     await adminClient.from("user_wallet").insert({ user_id: newUser.user.id });
     await adminClient.from("user_streaks").insert({ user_id: newUser.user.id });
 
-    // Get production site URL (from request or environment)
-    // Priority: request body > environment variable > default to Supabase project URL
-    let productionUrl = siteUrl || 
-      Deno.env.get("SITE_URL") || 
-      Deno.env.get("VITE_SITE_URL") ||
-      `https://${supabaseUrl.replace('https://', '').replace('.supabase.co', '')}.supabase.co`; // Fallback to project URL
-    
-    // Ensure URL uses HTTPS (security requirement)
-    if (productionUrl && !productionUrl.startsWith('https://')) {
-      productionUrl = productionUrl.replace(/^http:\/\//, 'https://');
-      console.warn('URL was HTTP, converted to HTTPS:', productionUrl);
-    }
-    
-    // Ensure URL doesn't end with slash
-    productionUrl = productionUrl.replace(/\/$/, '');
-    
-    // Generate password recovery link with proper redirect URL
-    let recoveryLink = '';
-    try {
-      // Determine redirect URL - should point to your frontend's login page (Supabase will handle the reset)
-      // Supabase recovery link will redirect to this URL after password reset
-      const redirectTo = `${productionUrl}/login`; // Redirect to login page after password reset
-      
-      const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
-        type: 'recovery',
-        email: email,
-        options: {
-          redirectTo: redirectTo,
-        },
-      });
-
-      if (linkError) {
-        console.error('Error generating recovery link:', linkError);
-      } else {
-        recoveryLink = linkData.properties.action_link;
-        console.log('Recovery link generated:', recoveryLink);
-        console.log('Redirect URL:', redirectTo);
-      }
-    } catch (linkGenError) {
-      console.error('Error generating recovery link:', linkGenError);
-    }
-
     // Send invitation email via Resend API (using API key from request)
-    if (recoveryLink) {
+    if (generatedPassword) {
       try {
         console.log('Attempting to send invitation email to:', email);
         
@@ -181,7 +163,19 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Prepare email content
+        // Get production site URL for login link
+        let productionUrl = siteUrl || 
+          Deno.env.get("SITE_URL") || 
+          Deno.env.get("VITE_SITE_URL") ||
+          `https://${supabaseUrl.replace('https://', '').replace('.supabase.co', '')}.supabase.co`;
+        
+        if (productionUrl && !productionUrl.startsWith('https://')) {
+          productionUrl = productionUrl.replace(/^http:\/\//, 'https://');
+        }
+        productionUrl = productionUrl.replace(/\/$/, '');
+        const loginUrl = `${productionUrl}/login`;
+
+        // Prepare email content with password
         const emailHtml = `
               <!DOCTYPE html>
               <html>
@@ -193,6 +187,9 @@ Deno.serve(async (req) => {
                   .header { background: #4F46E5; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
                   .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
                   .button { display: inline-block; background: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+                  .password-box { background: #fff; border: 2px solid #4F46E5; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; }
+                  .password { font-family: 'Courier New', monospace; font-size: 24px; font-weight: bold; color: #4F46E5; letter-spacing: 2px; }
+                  .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin: 20px 0; border-radius: 4px; }
                   .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 14px; }
                 </style>
               </head>
@@ -203,21 +200,27 @@ Deno.serve(async (req) => {
                   </div>
                   <div class="content">
                     <p>สวัสดีคุณ <strong>${fullName}</strong>,</p>
-                    <p>บัญชีของคุณถูกสร้างเรียบร้อยแล้ว กรุณาคลิกปุ่มด้านล่างเพื่อตั้งรหัสผ่านของคุณ:</p>
+                    <p>บัญชีของคุณถูกสร้างเรียบร้อยแล้ว รหัสผ่านของคุณคือ:</p>
                     
-                    <div style="text-align: center;">
-                      <a href="${recoveryLink}" class="button" style="color: white; text-decoration: none;">
-                        ตั้งรหัสผ่าน
+                    <div class="password-box">
+                      <p style="margin: 0 0 10px 0; color: #6b7280; font-size: 14px;">รหัสผ่านของคุณ:</p>
+                      <div class="password">${generatedPassword}</div>
+                    </div>
+                    
+                    <div class="warning">
+                      <p style="margin: 0; font-size: 14px; color: #92400e;">
+                        <strong>⚠️ คำเตือน:</strong> กรุณาเก็บรหัสผ่านนี้ไว้เป็นความลับ และเปลี่ยนรหัสผ่านหลังจาก login ครั้งแรก
+                      </p>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                      <a href="${loginUrl}" class="button" style="color: white; text-decoration: none;">
+                        เข้าสู่ระบบ
                       </a>
                     </div>
                     
-                    <p style="margin-top: 30px; font-size: 14px; color: #6b7280;">
-                      หรือคัดลอกลิงก์นี้ไปวางในเบราว์เซอร์:<br>
-                      <a href="${recoveryLink}" style="color: #4F46E5; word-break: break-all;">${recoveryLink}</a>
-                    </p>
-                    
-                    <p style="margin-top: 20px; font-size: 12px; color: #9ca3af;">
-                      <strong>หมายเหตุ:</strong> ลิงก์นี้จะหมดอายุใน 24 ชั่วโมง
+                    <p style="margin-top: 20px; font-size: 14px; color: #6b7280;">
+                      หรือไปที่: <a href="${loginUrl}" style="color: #4F46E5;">${loginUrl}</a>
                     </p>
                     
                     <div class="footer">
@@ -235,11 +238,13 @@ Deno.serve(async (req) => {
 
 สวัสดีคุณ ${fullName},
 
-บัญชีของคุณถูกสร้างเรียบร้อยแล้ว กรุณาคลิกลิงก์ด้านล่างเพื่อตั้งรหัสผ่านของคุณ:
+บัญชีของคุณถูกสร้างเรียบร้อยแล้ว
 
-${recoveryLink}
+รหัสผ่านของคุณคือ: ${generatedPassword}
 
-หมายเหตุ: ลิงก์นี้จะหมดอายุใน 24 ชั่วโมง
+⚠️ คำเตือน: กรุณาเก็บรหัสผ่านนี้ไว้เป็นความลับ และเปลี่ยนรหัสผ่านหลังจาก login ครั้งแรก
+
+เข้าสู่ระบบได้ที่: ${loginUrl}
 
 ---
 ระบบจองห้องประชุม
@@ -257,7 +262,7 @@ ${recoveryLink}
           body: JSON.stringify({
             from: 'onboarding@resend.dev',
             to: email,
-            subject: `ยินดีต้อนรับสู่ระบบ - ตั้งรหัสผ่านของคุณ`,
+            subject: `ยินดีต้อนรับสู่ระบบ - รหัสผ่านของคุณ`,
             html: emailHtml,
             text: emailText,
             // Disable click tracking to avoid SSL certificate issues
@@ -299,12 +304,13 @@ ${recoveryLink}
         });
       }
     } else {
-      console.warn('No recovery link generated, cannot send invitation email');
+      console.warn('No password generated, cannot send invitation email');
       return new Response(JSON.stringify({ 
-        ok: true, 
-        userId: newUser.user.id,
-        warning: 'User created but recovery link generation failed',
+        ok: false, 
+        reason: "PASSWORD_GENERATION_FAILED",
+        error: 'Failed to generate password for user'
       }), {
+        status: 500,
         headers: { 
           "Content-Type": "application/json",
           'Access-Control-Allow-Origin': '*',

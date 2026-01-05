@@ -73,62 +73,94 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
 
     setLoading(true)
     try {
-      // Fetch wallet
-      const { data: wallet } = await supabase
-        .from('user_wallet')
-        .select('total_points, level')
-        .eq('user_id', user.id)
-        .single()
+      // Fetch all data in parallel
+      const [
+        walletResult,
+        streakResult,
+        progressResult,
+        episodesCountResult,
+        bookingsResult,
+      ] = await Promise.all([
+        // Fetch wallet (use maybeSingle to handle null)
+        supabase
+          .from('user_wallet')
+          .select('total_points, level')
+          .eq('user_id', user.id)
+          .maybeSingle(),
 
-      // Fetch streak
-      const { data: streak } = await supabase
-        .from('user_streaks')
-        .select('current_streak, max_streak')
-        .eq('user_id', user.id)
-        .single()
+        // Fetch streak (use maybeSingle to handle null)
+        supabase
+          .from('user_streaks')
+          .select('current_streak, max_streak')
+          .eq('user_id', user.id)
+          .maybeSingle(),
 
-      // Fetch learning progress
-      const { data: progressData } = await supabase
-        .from('user_episode_progress')
-        .select('episode_id, watched_percent, completed_at')
-        .eq('user_id', user.id)
+        // Fetch learning progress
+        supabase
+          .from('user_episode_progress')
+          .select('episode_id, watched_percent, completed_at')
+          .eq('user_id', user.id),
 
-      const totalEpisodes = progressData?.length || 0
-      const completedEpisodes = progressData?.filter(
+        // Get total published episodes count
+        supabase
+          .from('episodes')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'published'),
+
+        // Fetch bookings
+        supabase
+          .from('room_bookings')
+          .select('status')
+          .eq('booked_by_user_id', user.id),
+      ])
+
+      // Handle wallet
+      const wallet = walletResult.data || null
+      const walletError = walletResult.error
+      if (walletError && walletError.code !== 'PGRST116') {
+        console.error('Error fetching wallet:', walletError)
+      }
+
+      // Handle streak
+      const streak = streakResult.data || null
+      const streakError = streakResult.error
+      if (streakError && streakError.code !== 'PGRST116') {
+        console.error('Error fetching streak:', streakError)
+      }
+
+      // Calculate learning progress
+      const progressData = progressResult.data || []
+      const completedEpisodes = progressData.filter(
         (p) => p.completed_at || (p.watched_percent >= 90)
-      ).length || 0
-      const inProgressEpisodes = progressData?.filter(
+      ).length
+      const inProgressEpisodes = progressData.filter(
         (p) => !p.completed_at && p.watched_percent > 0 && p.watched_percent < 90
-      ).length || 0
-
-      // Get total published episodes for percentage calculation
-      const { count: totalPublishedEpisodes } = await supabase
-        .from('episodes')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'published')
-
-      const progressPercent = totalPublishedEpisodes
+      ).length
+      const totalPublishedEpisodes = episodesCountResult.count || 0
+      const progressPercent = totalPublishedEpisodes > 0
         ? Math.round((completedEpisodes / totalPublishedEpisodes) * 100)
         : 0
 
-      // Fetch bookings
-      const { data: bookings } = await supabase
-        .from('room_bookings')
-        .select('status')
-        .eq('booked_by_user_id', user.id)
-
-      const totalBookings = bookings?.length || 0
-      const approvedBookings = bookings?.filter((b) => b.status === 'approved').length || 0
-      const pendingBookings = bookings?.filter((b) => b.status === 'pending').length || 0
+      // Calculate bookings
+      const bookings = bookingsResult.data || []
+      const totalBookings = bookings.length
+      const approvedBookings = bookings.filter((b) => b.status === 'approved').length
+      const pendingBookings = bookings.filter((b) => b.status === 'pending').length
 
       setStats({
-        wallet: wallet || null,
-        streak: streak || null,
+        wallet: wallet ? {
+          total_points: wallet.total_points || 0,
+          level: wallet.level || 1,
+        } : null,
+        streak: streak ? {
+          current_streak: streak.current_streak || 0,
+          max_streak: streak.max_streak || 0,
+        } : null,
         learning: {
-          total_episodes: totalPublishedEpisodes || 0,
+          total_episodes: totalPublishedEpisodes,
           completed_episodes,
-          in_progress_episodes: inProgressEpisodes,
-          progress_percent: progressPercent,
+          in_progress_episodes,
+          progress_percent,
         },
         bookings: {
           total: totalBookings,
@@ -138,6 +170,22 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
       })
     } catch (error) {
       console.error('Error fetching user stats:', error)
+      // Set default values on error
+      setStats({
+        wallet: null,
+        streak: null,
+        learning: {
+          total_episodes: 0,
+          completed_episodes: 0,
+          in_progress_episodes: 0,
+          progress_percent: 0,
+        },
+        bookings: {
+          total: 0,
+          approved: 0,
+          pending: 0,
+        },
+      })
     } finally {
       setLoading(false)
     }
@@ -250,13 +298,13 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-blue-700">ความคืบหน้า</span>
                   <span className="text-sm font-bold text-blue-900">
-                    {stats.learning?.progress_percent || 0}%
+                    {stats.learning?.progress_percent ?? 0}%
                   </span>
                 </div>
                 <div className="w-full bg-blue-200 rounded-full h-2">
                   <div
                     className="bg-blue-600 h-2 rounded-full transition-all"
-                    style={{ width: `${stats.learning?.progress_percent || 0}%` }}
+                    style={{ width: `${stats.learning?.progress_percent ?? 0}%` }}
                   />
                 </div>
                 
@@ -266,7 +314,7 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
                       <CheckCircle2 className="w-4 h-4" />
                     </div>
                     <p className="text-lg font-bold text-blue-900">
-                      {stats.learning?.completed_episodes || 0}
+                      {stats.learning?.completed_episodes ?? 0}
                     </p>
                     <p className="text-xs text-blue-700">เรียนจบ</p>
                   </div>
@@ -275,7 +323,7 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
                       <Clock className="w-4 h-4" />
                     </div>
                     <p className="text-lg font-bold text-blue-900">
-                      {stats.learning?.in_progress_episodes || 0}
+                      {stats.learning?.in_progress_episodes ?? 0}
                     </p>
                     <p className="text-xs text-blue-700">กำลังเรียน</p>
                   </div>
@@ -284,7 +332,7 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
                       <PlayCircle className="w-4 h-4" />
                     </div>
                     <p className="text-lg font-bold text-blue-900">
-                      {stats.learning?.total_episodes || 0}
+                      {stats.learning?.total_episodes ?? 0}
                     </p>
                     <p className="text-xs text-blue-700">ทั้งหมด</p>
                   </div>
@@ -302,19 +350,19 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center">
                   <p className="text-2xl font-bold text-green-900">
-                    {stats.bookings?.total || 0}
+                    {stats.bookings?.total ?? 0}
                   </p>
                   <p className="text-xs text-green-700">ทั้งหมด</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-green-700">
-                    {stats.bookings?.approved || 0}
+                    {stats.bookings?.approved ?? 0}
                   </p>
                   <p className="text-xs text-green-700">อนุมัติแล้ว</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-orange-600">
-                    {stats.bookings?.pending || 0}
+                    {stats.bookings?.pending ?? 0}
                   </p>
                   <p className="text-xs text-green-700">รออนุมัติ</p>
                 </div>

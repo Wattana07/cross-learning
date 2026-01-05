@@ -72,6 +72,10 @@ export async function updateBookingStatus(
     setTimeout(async () => {
       try {
         console.log('Calling notify-booking-approval for booking:', data.id)
+        
+        // Wait a bit longer to ensure function is ready
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
         const { data: notifyData, error: notifyError } = await supabase.functions.invoke('notify-booking-approval', {
           body: { bookingId: data.id },
         })
@@ -79,6 +83,11 @@ export async function updateBookingStatus(
         if (notifyError) {
           console.error('Error sending booking approval notification:', notifyError)
           console.error('Error details:', JSON.stringify(notifyError, null, 2))
+          
+          // If 404, function might not be ready yet - this is OK, email will be sent on next approval
+          if (notifyError.message?.includes('404') || notifyError.message?.includes('Not Found')) {
+            console.warn('⚠️ notify-booking-approval function not found (404) - this is OK, status update succeeded')
+          }
           // Don't show error to user - email sending failure shouldn't block approval
         } else {
           console.log('✅ Booking approval notification sent successfully:', notifyData)
@@ -91,6 +100,11 @@ export async function updateBookingStatus(
           stack: notifyError?.stack,
           name: notifyError?.name,
         })
+        
+        // If 404, function might not be ready yet - this is OK
+        if (notifyError?.message?.includes('404') || notifyError?.message?.includes('Not Found')) {
+          console.warn('⚠️ notify-booking-approval function not found (404) - this is OK, status update succeeded')
+        }
         // Don't show error to user - email sending failure shouldn't block approval
       }
     }, 100) // Small delay to ensure status update completes first

@@ -405,13 +405,14 @@ Deno.serve(async (req) => {
                     </div>
                     
                     <div class="button-container">
-                      <a href="${loginUrl}" class="button">
+                      <a href="${loginUrl}" class="button" data-resend-disable-tracking="true">
                         🚀 เข้าสู่ระบบตอนนี้
                       </a>
                     </div>
                     
                     <div class="link-text">
-                      หรือคลิกที่ลิงค์นี้: <a href="${loginUrl}">${loginUrl}</a>
+                      หรือคัดลอกลิงค์นี้ไปวางในเบราว์เซอร์:<br>
+                      <span style="word-break: break-all; color: #0284c7; font-weight: 500;">${loginUrl}</span>
                     </div>
                     
                     <div class="divider"></div>

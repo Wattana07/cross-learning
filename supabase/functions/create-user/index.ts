@@ -447,9 +447,16 @@ Deno.serve(async (req) => {
 อีเมลนี้ถูกส่งอัตโนมัติ กรุณาอย่าตอบกลับ
             `.trim();
 
+        // Get from email address - use verified domain if available
+        // Priority: RESEND_FROM env var > default to verified domain > fallback to onboarding@resend.dev
+        const fromEmail = Deno.env.get("RESEND_FROM") || 
+                         Deno.env.get("DEFAULT_FROM") || 
+                         'noreply@happympm.com'; // Use verified domain
+        
         // Send email directly via Resend API
         console.log('Sending email directly via Resend API to:', email);
         console.log('Email subject:', `ยินดีต้อนรับสู่ระบบ - รหัสผ่านของคุณ`);
+        console.log('From email:', fromEmail);
         const resendResponse = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
@@ -457,7 +464,7 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'onboarding@resend.dev',
+            from: fromEmail,
             to: email,
             subject: `ยินดีต้อนรับสู่ระบบ - รหัสผ่านของคุณ`,
             html: emailHtml,

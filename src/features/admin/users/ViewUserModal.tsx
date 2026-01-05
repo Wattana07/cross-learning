@@ -77,8 +77,7 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
       const [
         walletResult,
         streakResult,
-        progressResult,
-        episodesCountResult,
+        episodesResult,
         bookingsResult,
       ] = await Promise.all([
         // Fetch wallet (use maybeSingle to handle null)
@@ -95,16 +94,10 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
           .eq('user_id', user.id)
           .maybeSingle(),
 
-        // Fetch learning progress
-        supabase
-          .from('user_episode_progress')
-          .select('episode_id, watched_percent, completed_at')
-          .eq('user_id', user.id),
-
-        // Get total published episodes count
+        // Get all published episodes first
         supabase
           .from('episodes')
-          .select('id', { count: 'exact', head: true })
+          .select('id')
           .eq('status', 'published'),
 
         // Fetch bookings
@@ -113,6 +106,41 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
           .select('status')
           .eq('booked_by_user_id', user.id),
       ])
+
+      // Get episode IDs
+      const episodesList = episodesResult.data || []
+      const episodeIds = episodesList.map((e) => e.id)
+      const totalPublishedEpisodes = episodesList.length
+
+      // Fetch learning progress for all published episodes
+      let progressData: any[] = []
+      if (episodeIds.length > 0) {
+        const progressResult = await supabase
+          .from('user_episode_progress')
+          .select('episode_id, watched_percent, completed_at')
+          .eq('user_id', user.id)
+          .in('episode_id', episodeIds)
+        
+        if (progressResult.error) {
+          console.error('❌ Error fetching user progress:', progressResult.error)
+        }
+        
+        progressData = progressResult.data || []
+        
+        // Debug logging
+        console.log('🔍 ViewUserModal Debug:', {
+          userId: user.id,
+          userEmail: user.email,
+          totalPublishedEpisodes,
+          episodeIds: episodeIds.length,
+          episodeIdsSample: episodeIds.slice(0, 3),
+          progressDataCount: progressData.length,
+          progressData: progressData,
+          progressError: progressResult.error,
+        })
+      } else {
+        console.log('⚠️ No published episodes found')
+      }
 
       // Handle wallet
       const wallet = walletResult.data || null
@@ -129,17 +157,28 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
       }
 
       // Calculate learning progress
-      const progressData = progressResult.data || []
       const completedEpisodes = progressData.filter(
-        (p) => p.completed_at || (p.watched_percent >= 90)
+        (p) => p.completed_at !== null || (p.watched_percent ?? 0) >= 90
       ).length
       const inProgressEpisodes = progressData.filter(
-        (p) => !p.completed_at && p.watched_percent > 0 && p.watched_percent < 90
+        (p) => p.completed_at === null && (p.watched_percent ?? 0) > 0 && (p.watched_percent ?? 0) < 90
       ).length
-      const totalPublishedEpisodes = episodesCountResult.count || 0
       const progressPercent = totalPublishedEpisodes > 0
         ? Math.round((completedEpisodes / totalPublishedEpisodes) * 100)
         : 0
+      
+      console.log('📊 Calculated Stats:', {
+        completedEpisodes,
+        inProgressEpisodes,
+        totalPublishedEpisodes,
+        progressPercent,
+        progressDataDetails: progressData.map(p => ({
+          episode_id: p.episode_id,
+          watched_percent: p.watched_percent,
+          completed_at: p.completed_at,
+          isCompleted: p.completed_at !== null || (p.watched_percent ?? 0) >= 90,
+        })),
+      })
 
       // Calculate bookings
       const bookings = bookingsResult.data || []

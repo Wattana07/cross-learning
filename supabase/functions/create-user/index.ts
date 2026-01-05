@@ -199,7 +199,7 @@ Deno.serve(async (req) => {
                     font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
                     line-height: 1.7; 
                     color: #1f2937; 
-                    background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
+                    background: #f0f9ff;
                     padding: 40px 20px;
                   }
                   .email-wrapper {
@@ -208,10 +208,11 @@ Deno.serve(async (req) => {
                     background: #ffffff;
                     border-radius: 16px;
                     overflow: hidden;
-                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                    box-shadow: 0 20px 60px rgba(37, 99, 235, 0.15);
+                    border: 1px solid #e0f2fe;
                   }
                   .header { 
-                    background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
+                    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
                     color: white; 
                     padding: 40px 30px;
                     text-align: center;
@@ -257,18 +258,18 @@ Deno.serve(async (req) => {
                     margin-bottom: 20px;
                   }
                   .greeting strong {
-                    color: #2563eb;
+                    color: #0284c7;
                     font-weight: 600;
                   }
                   .intro-text {
-                    color: #6b7280;
+                    color: #475569;
                     font-size: 16px;
                     margin-bottom: 30px;
                     line-height: 1.8;
                   }
                   .password-section {
-                    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-                    border: 2px dashed #cbd5e1;
+                    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+                    border: 2px dashed #7dd3fc;
                     border-radius: 12px;
                     padding: 30px;
                     margin: 30px 0;
@@ -276,9 +277,9 @@ Deno.serve(async (req) => {
                     position: relative;
                   }
                   .password-label {
-                    color: #64748b;
+                    color: #0369a1;
                     font-size: 14px;
-                    font-weight: 500;
+                    font-weight: 600;
                     text-transform: uppercase;
                     letter-spacing: 1px;
                     margin-bottom: 15px;
@@ -287,12 +288,13 @@ Deno.serve(async (req) => {
                     font-family: 'Courier New', 'SF Mono', Monaco, monospace; 
                     font-size: 32px; 
                     font-weight: 700; 
-                    color: #2563eb; 
+                    color: #0284c7; 
                     letter-spacing: 4px;
                     background: white;
                     padding: 20px;
                     border-radius: 8px;
-                    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+                    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.15);
+                    border: 1px solid #bae6fd;
                     display: inline-block;
                     min-width: 280px;
                     word-break: break-all;
@@ -320,29 +322,29 @@ Deno.serve(async (req) => {
                   }
                   .button { 
                     display: inline-block; 
-                    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
                     color: white; 
                     padding: 16px 40px; 
                     text-decoration: none; 
                     border-radius: 10px; 
                     font-weight: 600;
                     font-size: 16px;
-                    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
+                    box-shadow: 0 8px 20px rgba(2, 132, 199, 0.4);
                     transition: all 0.3s ease;
                     letter-spacing: 0.5px;
                   }
                   .button:hover {
                     transform: translateY(-2px);
-                    box-shadow: 0 12px 24px rgba(37, 99, 235, 0.5);
+                    box-shadow: 0 12px 24px rgba(2, 132, 199, 0.5);
                   }
                   .link-text {
                     margin-top: 25px;
                     font-size: 14px; 
-                    color: #9ca3af;
+                    color: #64748b;
                     text-align: center;
                   }
                   .link-text a {
-                    color: #2563eb;
+                    color: #0284c7;
                     text-decoration: none;
                     font-weight: 500;
                   }

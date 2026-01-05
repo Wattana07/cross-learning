@@ -35,6 +35,9 @@ export function AdminUsersPage() {
   const [actionMenuUser, setActionMenuUser] = useState<string | null>(null)
   const [deletingUser, setDeletingUser] = useState<Profile | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const [resettingPasswordUser, setResettingPasswordUser] = useState<Profile | null>(null)
+  const [newPassword, setNewPassword] = useState<string | null>(null)
 
   // Fetch users
   const fetchUsers = async () => {
@@ -95,6 +98,58 @@ export function AdminUsersPage() {
       showError('เกิดข้อผิดพลาด: ' + (error.message || 'ไม่สามารถเปลี่ยนสถานะได้'))
     }
     setActionMenuUser(null)
+  }
+
+  // Reset user password
+  const resetUserPassword = async (user: Profile) => {
+    setResettingPassword(true)
+    setResettingPasswordUser(user)
+    setNewPassword(null)
+    try {
+      const resendApiKey = import.meta.env.VITE_RESEND_API_KEY || 're_DyUTxyKC_8xhyAqT9iamjtqAqbc2k5W5K';
+      let siteUrl = 'https://cross-learning.vercel.app';
+      
+      if (import.meta.env.VITE_SITE_URL && !import.meta.env.VITE_SITE_URL.includes('localhost')) {
+        siteUrl = import.meta.env.VITE_SITE_URL;
+      } else if (window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')) {
+        siteUrl = window.location.origin;
+      }
+      
+      if (siteUrl && !siteUrl.startsWith('https://')) {
+        siteUrl = siteUrl.replace(/^http:\/\//, 'https://');
+      }
+      siteUrl = siteUrl.replace(/\/$/, '');
+
+      const { data, error } = await supabase.functions.invoke('reset-user-password', {
+        body: {
+          userId: user.id,
+          resendApiKey: resendApiKey,
+          siteUrl: siteUrl,
+        },
+      })
+
+      if (error) throw error
+      
+      if (!data.ok) {
+        const errorMessages: Record<string, string> = {
+          NOT_ADMIN: 'คุณไม่มีสิทธิ์ในการรีเซ็ตรหัสผ่าน',
+          MISSING_USER_ID: 'ไม่พบ ID ผู้ใช้',
+          USER_NOT_FOUND: 'ไม่พบผู้ใช้',
+          UPDATE_FAILED: 'เกิดข้อผิดพลาดในการอัปเดตรหัสผ่าน',
+        }
+        throw new Error(errorMessages[data.reason] || data.reason || 'เกิดข้อผิดพลาด')
+      }
+
+      setNewPassword(data.password)
+      success(`รีเซ็ตรหัสผ่านสำเร็จ! รหัสผ่านใหม่ถูกส่งไปยังอีเมล ${user.email} แล้ว`)
+      setActionMenuUser(null)
+    } catch (error: any) {
+      console.error('Error resetting password:', error)
+      showError(error.message || 'ไม่สามารถรีเซ็ตรหัสผ่านได้')
+      setResettingPasswordUser(null)
+    } finally {
+      setResettingPassword(false)
+    }
   }
 
   // Delete user

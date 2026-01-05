@@ -7,6 +7,7 @@ import { updateMyProfile, getMyWallet } from '@/lib/auth'
 import { uploadAvatar } from '@/lib/storage'
 import { User, Mail, Building, Save, Camera, X, Trophy, BookOpen } from 'lucide-react'
 import { cn, formatPoints } from '@/lib/utils'
+import { ChangePasswordForm } from './ChangePasswordForm'
 
 // Calculate overall learning progress
 async function getOverallProgress(userId: string): Promise<{ progressPercent: number; completedEpisodes: number; totalEpisodes: number }> {
@@ -378,6 +379,12 @@ export function ProfilePage() {
             </Button>
           </div>
         </form>
+      </Card>
+
+      {/* Change Password */}
+      <Card variant="bordered" padding="lg">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">เปลี่ยนรหัสผ่าน</h2>
+        <ChangePasswordForm />
       </Card>
 
       {/* Account Info */}

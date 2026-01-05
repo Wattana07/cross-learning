@@ -54,12 +54,19 @@ export function BookingCalendar({ rooms, bookings, onBookRoom }: BookingCalendar
     return days
   }, [year, month, daysInMonth, adjustedStartingDay])
 
-  // Get bookings for a specific date
+  // Get bookings for a specific date (using local date to avoid timezone issues)
   const getBookingsForDate = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0]
+    const dateYear = date.getFullYear()
+    const dateMonth = date.getMonth()
+    const dateDay = date.getDate()
+    
     return bookings.filter((booking) => {
-      const bookingDate = new Date(booking.start_at).toISOString().split('T')[0]
-      return bookingDate === dateStr
+      const bookingDate = new Date(booking.start_at)
+      return (
+        bookingDate.getFullYear() === dateYear &&
+        bookingDate.getMonth() === dateMonth &&
+        bookingDate.getDate() === dateDay
+      )
     })
   }
 

@@ -41,9 +41,14 @@ export function EditBookingModal({ isOpen, onClose, onSuccess, booking }: EditBo
       const startDate = new Date(booking.start_at)
       const endDate = new Date(booking.end_at)
       
-      const dateStr = startDate.toISOString().split('T')[0]
-      const startTime = startDate.toTimeString().slice(0, 5)
-      const endTime = endDate.toTimeString().slice(0, 5)
+      // Use local date/time to avoid timezone issues
+      const year = startDate.getFullYear()
+      const month = String(startDate.getMonth() + 1).padStart(2, '0')
+      const day = String(startDate.getDate()).padStart(2, '0')
+      const dateStr = `${year}-${month}-${day}`
+      
+      const startTime = String(startDate.getHours()).padStart(2, '0') + ':' + String(startDate.getMinutes()).padStart(2, '0')
+      const endTime = String(endDate.getHours()).padStart(2, '0') + ':' + String(endDate.getMinutes()).padStart(2, '0')
       
       // Check if matches a time slot
       const timeSlot = TIME_SLOTS.find(slot => {
@@ -106,8 +111,13 @@ export function EditBookingModal({ isOpen, onClose, onSuccess, booking }: EditBo
         throw new Error('กรุณาเลือกช่วงเวลาหรือระบุเวลาเอง')
       }
 
-      const startDateTime = new Date(`${formData.booking_date}T${startTime}:00`)
-      const endDateTime = new Date(`${formData.booking_date}T${endTime}:00`)
+      // Create date in local timezone to avoid timezone conversion issues
+      const [year, month, day] = formData.booking_date.split('-').map(Number)
+      const [startHour, startMin] = startTime.split(':').map(Number)
+      const [endHour, endMin] = endTime.split(':').map(Number)
+      
+      const startDateTime = new Date(year, month - 1, day, startHour, startMin, 0)
+      const endDateTime = new Date(year, month - 1, day, endHour, endMin, 0)
 
       // Validate time
       if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {

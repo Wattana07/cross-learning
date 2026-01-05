@@ -214,8 +214,13 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms }: Bookin
         throw new Error('กรุณาเลือกช่วงเวลาหรือระบุเวลาเอง')
       }
 
-      const startDateTime = new Date(`${formData.booking_date}T${startTime}:00`)
-      const endDateTime = new Date(`${formData.booking_date}T${endTime}:00`)
+      // Create date in local timezone to avoid timezone conversion issues
+      const [year, month, day] = formData.booking_date.split('-').map(Number)
+      const [startHour, startMin] = startTime.split(':').map(Number)
+      const [endHour, endMin] = endTime.split(':').map(Number)
+      
+      const startDateTime = new Date(year, month - 1, day, startHour, startMin, 0)
+      const endDateTime = new Date(year, month - 1, day, endHour, endMin, 0)
 
       // Validate time
       if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {

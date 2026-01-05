@@ -171,69 +171,255 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Get production site URL for login link
-        let productionUrl = siteUrl || 
-          Deno.env.get("SITE_URL") || 
-          Deno.env.get("VITE_SITE_URL") ||
-          `https://${supabaseUrl.replace('https://', '').replace('.supabase.co', '')}.supabase.co`;
+        // Get production site URL for login link - use Vercel URL
+        let productionUrl = 'https://cross-learning.vercel.app';
+        
+        // Fallback to provided siteUrl if different from default
+        if (siteUrl && siteUrl.includes('cross-learning.vercel.app')) {
+          productionUrl = siteUrl.replace(/\/$/, '');
+        } else if (siteUrl && !siteUrl.includes('localhost') && !siteUrl.includes('127.0.0.1')) {
+          productionUrl = siteUrl.replace(/\/$/, '');
+        }
         
         if (productionUrl && !productionUrl.startsWith('https://')) {
           productionUrl = productionUrl.replace(/^http:\/\//, 'https://');
         }
-        productionUrl = productionUrl.replace(/\/$/, '');
         const loginUrl = `${productionUrl}/login`;
 
-        // Prepare email content with password
+        // Prepare email content with password - Modern, beautiful design
         const emailHtml = `
               <!DOCTYPE html>
-              <html>
+              <html lang="th">
               <head>
                 <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <style>
-                  body { font-family: 'Sarabun', Arial, sans-serif; line-height: 1.6; color: #333; }
-                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                  .header { background: #4F46E5; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
-                  .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
-                  .button { display: inline-block; background: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
-                  .password-box { background: #fff; border: 2px solid #4F46E5; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; }
-                  .password { font-family: 'Courier New', monospace; font-size: 24px; font-weight: bold; color: #4F46E5; letter-spacing: 2px; }
-                  .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin: 20px 0; border-radius: 4px; }
-                  .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 14px; }
+                  * { margin: 0; padding: 0; box-sizing: border-box; }
+                  body { 
+                    font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+                    line-height: 1.7; 
+                    color: #1f2937; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    padding: 40px 20px;
+                  }
+                  .email-wrapper {
+                    max-width: 600px; 
+                    margin: 0 auto;
+                    background: #ffffff;
+                    border-radius: 16px;
+                    overflow: hidden;
+                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                  }
+                  .header { 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white; 
+                    padding: 40px 30px;
+                    text-align: center;
+                    position: relative;
+                    overflow: hidden;
+                  }
+                  .header::before {
+                    content: '';
+                    position: absolute;
+                    top: -50%;
+                    right: -50%;
+                    width: 200%;
+                    height: 200%;
+                    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+                    animation: pulse 3s ease-in-out infinite;
+                  }
+                  @keyframes pulse {
+                    0%, 100% { transform: scale(1); opacity: 0.5; }
+                    50% { transform: scale(1.1); opacity: 0.8; }
+                  }
+                  .header h1 { 
+                    margin: 0; 
+                    font-size: 28px;
+                    font-weight: 700;
+                    letter-spacing: -0.5px;
+                    position: relative;
+                    z-index: 1;
+                  }
+                  .header-icon {
+                    font-size: 48px;
+                    margin-bottom: 10px;
+                    display: block;
+                    position: relative;
+                    z-index: 1;
+                  }
+                  .content { 
+                    background: #ffffff; 
+                    padding: 40px 30px; 
+                  }
+                  .greeting {
+                    font-size: 18px;
+                    color: #374151;
+                    margin-bottom: 20px;
+                  }
+                  .greeting strong {
+                    color: #667eea;
+                    font-weight: 600;
+                  }
+                  .intro-text {
+                    color: #6b7280;
+                    font-size: 16px;
+                    margin-bottom: 30px;
+                    line-height: 1.8;
+                  }
+                  .password-section {
+                    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                    border: 2px dashed #cbd5e1;
+                    border-radius: 12px;
+                    padding: 30px;
+                    margin: 30px 0;
+                    text-align: center;
+                    position: relative;
+                  }
+                  .password-label {
+                    color: #64748b;
+                    font-size: 14px;
+                    font-weight: 500;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                    margin-bottom: 15px;
+                  }
+                  .password { 
+                    font-family: 'Courier New', 'SF Mono', Monaco, monospace; 
+                    font-size: 32px; 
+                    font-weight: 700; 
+                    color: #667eea; 
+                    letter-spacing: 4px;
+                    background: white;
+                    padding: 20px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+                    display: inline-block;
+                    min-width: 280px;
+                    word-break: break-all;
+                  }
+                  .warning { 
+                    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+                    border-left: 4px solid #f59e0b; 
+                    padding: 18px 20px; 
+                    margin: 30px 0; 
+                    border-radius: 8px;
+                    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.1);
+                  }
+                  .warning p {
+                    margin: 0; 
+                    font-size: 14px; 
+                    color: #92400e;
+                    line-height: 1.6;
+                  }
+                  .warning strong {
+                    font-weight: 600;
+                  }
+                  .button-container {
+                    text-align: center; 
+                    margin: 40px 0;
+                  }
+                  .button { 
+                    display: inline-block; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white; 
+                    padding: 16px 40px; 
+                    text-decoration: none; 
+                    border-radius: 10px; 
+                    font-weight: 600;
+                    font-size: 16px;
+                    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+                    transition: all 0.3s ease;
+                    letter-spacing: 0.5px;
+                  }
+                  .button:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 12px 24px rgba(102, 126, 234, 0.5);
+                  }
+                  .link-text {
+                    margin-top: 25px;
+                    font-size: 14px; 
+                    color: #9ca3af;
+                    text-align: center;
+                  }
+                  .link-text a {
+                    color: #667eea;
+                    text-decoration: none;
+                    font-weight: 500;
+                  }
+                  .link-text a:hover {
+                    text-decoration: underline;
+                  }
+                  .footer { 
+                    text-align: center; 
+                    margin-top: 40px; 
+                    padding-top: 30px;
+                    border-top: 1px solid #e5e7eb;
+                    color: #9ca3af; 
+                    font-size: 13px;
+                    line-height: 1.8;
+                  }
+                  .footer p {
+                    margin: 5px 0;
+                  }
+                  .divider {
+                    height: 1px;
+                    background: linear-gradient(90deg, transparent, #e5e7eb, transparent);
+                    margin: 30px 0;
+                  }
+                  @media only screen and (max-width: 600px) {
+                    body { padding: 20px 10px; }
+                    .header { padding: 30px 20px; }
+                    .header h1 { font-size: 24px; }
+                    .content { padding: 30px 20px; }
+                    .password { font-size: 24px; letter-spacing: 2px; min-width: auto; padding: 15px; }
+                    .button { padding: 14px 30px; font-size: 15px; }
+                  }
                 </style>
               </head>
               <body>
-                <div class="container">
+                <div class="email-wrapper">
                   <div class="header">
-                    <h1 style="margin: 0;">ยินดีต้อนรับสู่ระบบ</h1>
+                    <span class="header-icon">🎉</span>
+                    <h1>ยินดีต้อนรับสู่ระบบ</h1>
                   </div>
                   <div class="content">
-                    <p>สวัสดีคุณ <strong>${fullName}</strong>,</p>
-                    <p>บัญชีของคุณถูกสร้างเรียบร้อยแล้ว รหัสผ่านของคุณคือ:</p>
+                    <div class="greeting">
+                      สวัสดีคุณ <strong>${fullName}</strong>,
+                    </div>
+                    <p class="intro-text">
+                      บัญชีของคุณถูกสร้างเรียบร้อยแล้ว! คุณสามารถใช้รหัสผ่านด้านล่างเพื่อเข้าสู่ระบบได้ทันที
+                    </p>
                     
-                    <div class="password-box">
-                      <p style="margin: 0 0 10px 0; color: #6b7280; font-size: 14px;">รหัสผ่านของคุณ:</p>
+                    <div class="password-section">
+                      <div class="password-label">🔐 รหัสผ่านของคุณ</div>
                       <div class="password">${generatedPassword}</div>
                     </div>
                     
                     <div class="warning">
-                      <p style="margin: 0; font-size: 14px; color: #92400e;">
-                        <strong>⚠️ คำเตือน:</strong> กรุณาเก็บรหัสผ่านนี้ไว้เป็นความลับ และเปลี่ยนรหัสผ่านหลังจาก login ครั้งแรก
+                      <p>
+                        <strong>⚠️ คำเตือนความปลอดภัย:</strong><br>
+                        กรุณาเก็บรหัสผ่านนี้ไว้เป็นความลับ และแนะนำให้เปลี่ยนรหัสผ่านหลังจากเข้าสู่ระบบครั้งแรกเพื่อความปลอดภัยสูงสุด
                       </p>
                     </div>
                     
-                    <div style="text-align: center; margin: 30px 0;">
-                      <a href="${loginUrl}" class="button" style="color: white; text-decoration: none;">
-                        เข้าสู่ระบบ
+                    <div class="button-container">
+                      <a href="${loginUrl}" class="button">
+                        🚀 เข้าสู่ระบบตอนนี้
                       </a>
                     </div>
                     
-                    <p style="margin-top: 20px; font-size: 14px; color: #6b7280;">
-                      หรือไปที่: <a href="${loginUrl}" style="color: #4F46E5;">${loginUrl}</a>
-                    </p>
+                    <div class="link-text">
+                      หรือคลิกที่ลิงค์นี้: <a href="${loginUrl}">${loginUrl}</a>
+                    </div>
+                    
+                    <div class="divider"></div>
                     
                     <div class="footer">
-                      <p>ระบบจองห้องประชุม</p>
+                      <p><strong>ระบบจองห้องประชุม</strong></p>
                       <p>อีเมลนี้ถูกส่งอัตโนมัติ กรุณาอย่าตอบกลับ</p>
+                      <p style="margin-top: 15px; font-size: 12px; color: #d1d5db;">
+                        หากคุณไม่ได้เป็นผู้สร้างบัญชีนี้ กรุณาเพิกเฉยต่ออีเมลนี้
+                      </p>
                     </div>
                   </div>
                 </div>

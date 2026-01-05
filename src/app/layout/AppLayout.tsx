@@ -68,7 +68,7 @@ export function AppLayout() {
         </div>
 
         {/* Navigation */}
-        <nav className="p-4 space-y-1 pb-40">
+        <nav className="p-4 space-y-1 pb-20">
           {navigation.map((item) => {
             const isActive = location.pathname === item.href
             return (
@@ -112,32 +112,11 @@ export function AppLayout() {
           )}
         </nav>
 
-        {/* User info and Logout button at bottom */}
+        {/* Logout button at bottom */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-100 bg-white">
-          <div className="flex items-center gap-3 mb-3">
-            <Avatar
-              src={profile?.avatar_path}
-              name={profile?.full_name}
-              size="sm"
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">
-                {profile?.full_name || 'ผู้ใช้'}
-              </p>
-              <p className="text-xs text-gray-500 truncate">{profile?.email}</p>
-            </div>
-          </div>
-          <Link
-            to="/profile"
-            onClick={() => setSidebarOpen(false)}
-            className="flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 mb-2"
-          >
-            <User className="w-4 h-4" />
-            โปรไฟล์
-          </Link>
           <button
             onClick={handleSignOut}
-            className="flex items-center gap-3 w-full px-4 py-2 rounded-lg text-sm font-medium text-danger-600 hover:bg-danger-50 transition-colors"
+            className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-danger-600 hover:bg-danger-50 transition-colors"
           >
             <LogOut className="w-4 h-4" />
             ออกจากระบบ

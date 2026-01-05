@@ -199,7 +199,7 @@ Deno.serve(async (req) => {
                     font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
                     line-height: 1.7; 
                     color: #1f2937; 
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
                     padding: 40px 20px;
                   }
                   .email-wrapper {
@@ -211,7 +211,7 @@ Deno.serve(async (req) => {
                     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
                   }
                   .header { 
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
                     color: white; 
                     padding: 40px 30px;
                     text-align: center;
@@ -257,7 +257,7 @@ Deno.serve(async (req) => {
                     margin-bottom: 20px;
                   }
                   .greeting strong {
-                    color: #667eea;
+                    color: #2563eb;
                     font-weight: 600;
                   }
                   .intro-text {
@@ -287,12 +287,12 @@ Deno.serve(async (req) => {
                     font-family: 'Courier New', 'SF Mono', Monaco, monospace; 
                     font-size: 32px; 
                     font-weight: 700; 
-                    color: #667eea; 
+                    color: #2563eb; 
                     letter-spacing: 4px;
                     background: white;
                     padding: 20px;
                     border-radius: 8px;
-                    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+                    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
                     display: inline-block;
                     min-width: 280px;
                     word-break: break-all;
@@ -320,20 +320,20 @@ Deno.serve(async (req) => {
                   }
                   .button { 
                     display: inline-block; 
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
                     color: white; 
                     padding: 16px 40px; 
                     text-decoration: none; 
                     border-radius: 10px; 
                     font-weight: 600;
                     font-size: 16px;
-                    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+                    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
                     transition: all 0.3s ease;
                     letter-spacing: 0.5px;
                   }
                   .button:hover {
                     transform: translateY(-2px);
-                    box-shadow: 0 12px 24px rgba(102, 126, 234, 0.5);
+                    box-shadow: 0 12px 24px rgba(37, 99, 235, 0.5);
                   }
                   .link-text {
                     margin-top: 25px;
@@ -342,7 +342,7 @@ Deno.serve(async (req) => {
                     text-align: center;
                   }
                   .link-text a {
-                    color: #667eea;
+                    color: #2563eb;
                     text-decoration: none;
                     font-weight: 500;
                   }

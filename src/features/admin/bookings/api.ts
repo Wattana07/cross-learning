@@ -67,27 +67,33 @@ export async function updateBookingStatus(
 
   // If status is approved, send notification
   if (status === 'approved' && data) {
-    try {
-      console.log('Calling notify-booking-approval for booking:', data.id)
-      const { data: notifyData, error: notifyError } = await supabase.functions.invoke('notify-booking-approval', {
-        body: { bookingId: data.id },
-      })
-      
-      if (notifyError) {
-        console.error('Error sending booking approval notification:', notifyError)
-        console.error('Error details:', JSON.stringify(notifyError, null, 2))
-      } else {
-        console.log('✅ Booking approval notification sent successfully:', notifyData)
+    // Send notification asynchronously - don't block the status update
+    // Use setTimeout to avoid blocking the UI
+    setTimeout(async () => {
+      try {
+        console.log('Calling notify-booking-approval for booking:', data.id)
+        const { data: notifyData, error: notifyError } = await supabase.functions.invoke('notify-booking-approval', {
+          body: { bookingId: data.id },
+        })
+        
+        if (notifyError) {
+          console.error('Error sending booking approval notification:', notifyError)
+          console.error('Error details:', JSON.stringify(notifyError, null, 2))
+          // Don't show error to user - email sending failure shouldn't block approval
+        } else {
+          console.log('✅ Booking approval notification sent successfully:', notifyData)
+        }
+      } catch (notifyError: any) {
+        // Log error but don't fail the status update
+        console.error('❌ Exception sending booking approval notification:', notifyError)
+        console.error('Exception details:', {
+          message: notifyError?.message,
+          stack: notifyError?.stack,
+          name: notifyError?.name,
+        })
+        // Don't show error to user - email sending failure shouldn't block approval
       }
-    } catch (notifyError: any) {
-      // Log error but don't fail the status update
-      console.error('❌ Exception sending booking approval notification:', notifyError)
-      console.error('Exception details:', {
-        message: notifyError?.message,
-        stack: notifyError?.stack,
-        name: notifyError?.name,
-      })
-    }
+    }, 100) // Small delay to ensure status update completes first
   }
 
   return data

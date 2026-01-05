@@ -447,20 +447,13 @@ Deno.serve(async (req) => {
 อีเมลนี้ถูกส่งอัตโนมัติ กรุณาอย่าตอบกลับ
             `.trim();
 
-        // Get from email address
-        // Priority: RESEND_FROM env var > DEFAULT_FROM > fallback to onboarding@resend.dev
-        // Note: onboarding@resend.dev can only send to verified email addresses
-        // To send to any email (like gmail.com), you need to verify a domain in Resend
-        const fromEmail = Deno.env.get("RESEND_FROM") || 
-                         Deno.env.get("DEFAULT_FROM") || 
-                         'onboarding@resend.dev'; // Fallback to test domain
-        
-        console.log('Using from email:', fromEmail);
+        // Use onboarding@resend.dev (requires email verification in Resend)
+        // Users must verify their email in Resend Dashboard before receiving emails
+        const fromEmail = 'onboarding@resend.dev';
         
         // Send email directly via Resend API
         console.log('Sending email directly via Resend API to:', email);
         console.log('Email subject:', `ยินดีต้อนรับสู่ระบบ - รหัสผ่านของคุณ`);
-        console.log('From email:', fromEmail);
         const resendResponse = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
@@ -488,29 +481,17 @@ Deno.serve(async (req) => {
           console.error('Resend API error:', {
             status: resendResponse.status,
             statusText: resendResponse.statusText,
-            data: resendData,
-            fromEmail: fromEmail,
-            toEmail: email
+            data: resendData
           });
           
-          // Check if error is about domain verification
           const errorMessage = resendData.message || JSON.stringify(resendData);
-          const isDomainError = errorMessage.includes('not verified') || 
-                               errorMessage.includes('verify your domain') ||
-                               errorMessage.includes('testing emails') ||
-                               resendResponse.status === 403;
-          
-          let suggestion = '';
-          if (isDomainError) {
-            suggestion = 'To send emails to any address (including gmail.com), please verify your domain in Resend Dashboard (https://resend.com/domains) and set RESEND_FROM in Supabase Secrets to use verified domain email (e.g., noreply@yourdomain.com). See VERIFY_RESEND_DOMAIN.md for detailed instructions.';
-          }
           
           return new Response(JSON.stringify({ 
             ok: true, 
             userId: newUser.user.id,
             warning: 'User created but email sending failed',
             emailError: `Resend API error (${resendResponse.status}): ${errorMessage}`,
-            suggestion: suggestion
+            note: 'Email must be verified in Resend Dashboard (https://resend.com/emails) before receiving emails from onboarding@resend.dev'
           }), {
             headers: { 
               "Content-Type": "application/json",

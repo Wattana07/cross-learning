@@ -103,126 +103,237 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Send email notification
+    // Send email notifications when booking is approved
     if (booking.booker?.email) {
       try {
-        // Format date/time
+        // Get Resend API Key
+        const apiKey = Deno.env.get("RESEND_API_KEY") || Deno.env.get("resend_api_key");
+        
+        if (!apiKey) {
+          console.warn('Resend API Key not found - skipping email notifications');
+          return new Response(JSON.stringify({ ok: true, message: 'Booking approved but email sending skipped (no API key)' }), {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          });
+        }
+
+        // Get production site URL
+        let productionUrl = Deno.env.get("SITE_URL") || 
+          Deno.env.get("VITE_SITE_URL") ||
+          `https://cross-learning.vercel.app`;
+        
+        if (productionUrl && !productionUrl.startsWith('https://')) {
+          productionUrl = productionUrl.replace(/^http:\/\//, 'https://');
+        }
+        productionUrl = productionUrl.replace(/\/$/, '');
+
+        // Format date and time
         const startDate = new Date(booking.start_at);
         const endDate = new Date(booking.end_at);
-        const dateStr = startDate.toLocaleDateString('th-TH', { 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
+        const dateStr = startDate.toLocaleDateString('th-TH', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
         });
         const timeStr = `${startDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
 
-        // Call send-email function
-        const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            to: booking.booker.email,
-            subject: `✅ การจองห้องประชุมได้รับการอนุมัติ - ${booking.room?.name || 'ห้องประชุม'}`,
-            html: `
-              <!DOCTYPE html>
-              <html>
-              <head>
-                <meta charset="UTF-8">
-                <style>
-                  body { font-family: 'Sarabun', Arial, sans-serif; line-height: 1.6; color: #333; }
-                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                  .header { background: #4F46E5; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
-                  .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
-                  .info-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4F46E5; }
-                  .info-row { margin: 10px 0; }
-                  .label { font-weight: bold; color: #6b7280; }
-                  .value { color: #111827; }
-                  .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 14px; }
-                </style>
-              </head>
-              <body>
-                <div class="container">
-                  <div class="header">
-                    <h1 style="margin: 0;">✅ การจองห้องประชุมได้รับการอนุมัติ</h1>
+        const userName = booking.booker?.full_name || 'ผู้ใช้';
+        const roomName = booking.room?.name || 'ห้องประชุม';
+        const roomLocation = booking.room?.location || '';
+
+        // Email to user (confirmation)
+        const userEmailHtml = `
+          <!DOCTYPE html>
+          <html lang="th">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { 
+                font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+                line-height: 1.7; 
+                color: #1f2937; 
+                background: #f0f9ff;
+                padding: 40px 20px;
+              }
+              .email-wrapper {
+                max-width: 600px; 
+                margin: 0 auto;
+                background: #ffffff;
+                border-radius: 16px;
+                overflow: hidden;
+                box-shadow: 0 20px 60px rgba(37, 99, 235, 0.15);
+                border: 1px solid #e0f2fe;
+              }
+              .header { 
+                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                color: white; 
+                padding: 40px 30px;
+                text-align: center;
+              }
+              .header h1 { 
+                margin: 0; 
+                font-size: 28px;
+                font-weight: 700;
+              }
+              .header-icon {
+                font-size: 48px;
+                margin-bottom: 10px;
+                display: block;
+              }
+              .content { 
+                background: #ffffff; 
+                padding: 40px 30px; 
+              }
+              .info-box {
+                background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+                border: 2px solid #7dd3fc;
+                border-radius: 12px;
+                padding: 25px;
+                margin: 25px 0;
+              }
+              .info-row {
+                display: flex;
+                justify-content: space-between;
+                padding: 12px 0;
+                border-bottom: 1px solid #e2e8f0;
+              }
+              .info-row:last-child {
+                border-bottom: none;
+              }
+              .info-label {
+                color: #64748b;
+                font-weight: 500;
+                font-size: 14px;
+              }
+              .info-value {
+                color: #1e293b;
+                font-weight: 600;
+                font-size: 14px;
+                text-align: right;
+              }
+              .footer { 
+                text-align: center; 
+                margin-top: 40px; 
+                padding-top: 30px;
+                border-top: 1px solid #e5e7eb;
+                color: #9ca3af; 
+                font-size: 13px;
+                line-height: 1.8;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="email-wrapper">
+              <div class="header">
+                <span class="header-icon">✅</span>
+                <h1>การจองห้องประชุมได้รับการอนุมัติแล้ว</h1>
+              </div>
+              <div class="content">
+                <p style="font-size: 18px; color: #374151; margin-bottom: 20px;">
+                  สวัสดีคุณ <strong style="color: #059669;">${userName}</strong>,
+                </p>
+                <p style="color: #6b7280; font-size: 16px; margin-bottom: 30px; line-height: 1.8;">
+                  การจองห้องประชุมของคุณได้รับการอนุมัติแล้ว
+                </p>
+                
+                <div class="info-box">
+                  <div class="info-row">
+                    <span class="info-label">ชื่องาน:</span>
+                    <span class="info-value">${booking.title}</span>
                   </div>
-                  <div class="content">
-                    <p>สวัสดีคุณ <strong>${booking.booker?.full_name || 'ผู้ใช้'}</strong>,</p>
-                    <p>การจองห้องประชุมของคุณได้รับการอนุมัติแล้ว</p>
-                    
-                    <div class="info-box">
-                      <div class="info-row">
-                        <span class="label">ชื่องาน:</span>
-                        <span class="value">${booking.title}</span>
-                      </div>
-                      <div class="info-row">
-                        <span class="label">ห้องประชุม:</span>
-                        <span class="value">${booking.room?.name || '-'}</span>
-                      </div>
-                      ${booking.room?.location ? `
-                      <div class="info-row">
-                        <span class="label">สถานที่:</span>
-                        <span class="value">${booking.room.location}</span>
-                      </div>
-                      ` : ''}
-                      <div class="info-row">
-                        <span class="label">วันที่:</span>
-                        <span class="value">${dateStr}</span>
-                      </div>
-                      <div class="info-row">
-                        <span class="label">เวลา:</span>
-                        <span class="value">${timeStr}</span>
-                      </div>
-                    </div>
-                    
-                    ${booking.description ? `
-                    <p><strong>รายละเอียด:</strong></p>
-                    <p style="background: white; padding: 15px; border-radius: 8px; white-space: pre-wrap;">${booking.description}</p>
-                    ` : ''}
-                    
-                    <p>กรุณาเตรียมตัวให้พร้อมสำหรับการประชุม</p>
-                    
-                    <div class="footer">
-                      <p>ระบบจองห้องประชุม</p>
-                      <p>อีเมลนี้ถูกส่งอัตโนมัติ กรุณาอย่าตอบกลับ</p>
-                    </div>
+                  <div class="info-row">
+                    <span class="info-label">ห้องประชุม:</span>
+                    <span class="info-value">${roomName}</span>
+                  </div>
+                  ${roomLocation ? `
+                  <div class="info-row">
+                    <span class="info-label">สถานที่:</span>
+                    <span class="info-value">${roomLocation}</span>
+                  </div>
+                  ` : ''}
+                  <div class="info-row">
+                    <span class="info-label">วันที่:</span>
+                    <span class="info-value">${dateStr}</span>
+                  </div>
+                  <div class="info-row">
+                    <span class="info-label">เวลา:</span>
+                    <span class="info-value">${timeStr}</span>
                   </div>
                 </div>
-              </body>
-              </html>
-            `,
-            text: `
-การจองห้องประชุมได้รับการอนุมัติ
+                
+                ${booking.description ? `
+                <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                  <p style="color: #64748b; font-size: 14px; font-weight: 600; margin-bottom: 10px;">รายละเอียด:</p>
+                  <p style="color: #374151; font-size: 14px; line-height: 1.8; white-space: pre-wrap;">${booking.description}</p>
+                </div>
+                ` : ''}
+                
+                <p style="color: #6b7280; font-size: 14px; margin-top: 30px; line-height: 1.8;">
+                  คุณจะได้รับอีเมลแจ้งเตือนอีกครั้งก่อนถึงวันประชุม
+                </p>
+                
+                <div class="footer">
+                  <p><strong>ระบบจองห้องประชุม</strong></p>
+                  <p>อีเมลนี้ถูกส่งอัตโนมัติ กรุณาอย่าตอบกลับ</p>
+                </div>
+              </div>
+            </div>
+          </body>
+          </html>
+        `;
 
-สวัสดีคุณ ${booking.booker?.full_name || 'ผู้ใช้'},
+        const userEmailText = `
+การจองห้องประชุมได้รับการอนุมัติแล้ว
+
+สวัสดีคุณ ${userName},
 
 การจองห้องประชุมของคุณได้รับการอนุมัติแล้ว
 
 ชื่องาน: ${booking.title}
-ห้องประชุม: ${booking.room?.name || '-'}
-${booking.room?.location ? `สถานที่: ${booking.room.location}\n` : ''}วันที่: ${dateStr}
+ห้องประชุม: ${roomName}
+${roomLocation ? `สถานที่: ${roomLocation}\n` : ''}วันที่: ${dateStr}
 เวลา: ${timeStr}
 
-${booking.description ? `รายละเอียด:\n${booking.description}\n\n` : ''}
-กรุณาเตรียมตัวให้พร้อมสำหรับการประชุม
+${booking.description ? `รายละเอียด:\n${booking.description}\n\n` : ''}คุณจะได้รับอีเมลแจ้งเตือนอีกครั้งก่อนถึงวันประชุม
 
 ---
 ระบบจองห้องประชุม
 อีเมลนี้ถูกส่งอัตโนมัติ กรุณาอย่าตอบกลับ
-            `.trim(),
+        `.trim();
+
+        // Send email to user
+        const userEmailResponse = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: 'onboarding@resend.dev',
+            to: booking.booker.email,
+            subject: `✅ การจองห้องประชุมได้รับการอนุมัติ: ${booking.title}`,
+            html: userEmailHtml,
+            text: userEmailText,
+            click_tracking: false,
+            open_tracking: false,
           }),
         });
 
-        const emailResult = await emailResponse.json();
-        if (!emailResult.ok) {
-          console.error('Failed to send email:', emailResult);
+        const userEmailResult = await userEmailResponse.json();
+        if (userEmailResponse.ok) {
+          console.log('✅ Confirmation email sent to user:', userEmailResult.id);
         } else {
-          console.log('Email sent successfully:', emailResult.messageId);
+          console.error('Failed to send confirmation email to user:', userEmailResult);
         }
+
       } catch (emailError: any) {
-        console.error('Error sending email:', emailError);
+        console.error('Error sending booking approval email:', emailError);
         // Don't fail the whole function if email fails
       }
     }

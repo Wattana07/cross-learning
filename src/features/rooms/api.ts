@@ -204,6 +204,21 @@ export async function createBooking(booking: {
       : additionalInfo.join('\n')
   }
 
+  // Get Resend API Key and site URL for email notifications
+  const resendApiKey = import.meta.env.VITE_RESEND_API_KEY || 're_DyUTxyKC_8xhyAqT9iamjtqAqbc2k5W5K';
+  let siteUrl = 'https://cross-learning.vercel.app';
+  
+  if (import.meta.env.VITE_SITE_URL && !import.meta.env.VITE_SITE_URL.includes('localhost')) {
+    siteUrl = import.meta.env.VITE_SITE_URL;
+  } else if (window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')) {
+    siteUrl = window.location.origin;
+  }
+  
+  if (siteUrl && !siteUrl.startsWith('https://')) {
+    siteUrl = siteUrl.replace(/^http:\/\//, 'https://');
+  }
+  siteUrl = siteUrl.replace(/\/$/, '');
+
   // Call Edge Function for server-side validation
   const { data, error } = await supabase.functions.invoke('create-booking', {
     body: {
@@ -213,6 +228,8 @@ export async function createBooking(booking: {
       startAt: booking.start_at,
       endAt: booking.end_at,
       email: booking.email,
+      resendApiKey: resendApiKey,
+      siteUrl: siteUrl,
     },
   })
 

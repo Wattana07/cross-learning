@@ -21,6 +21,7 @@ export function RoomsPage() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [selectedRoom, setSelectedRoom] = useState<RoomWithDetails | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<RoomBooking | null>(null)
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
 
   const loadData = async () => {
     if (!user) return
@@ -49,8 +50,9 @@ export function RoomsPage() {
     loadData()
   }
 
-  const handleBookRoom = (room?: RoomWithDetails) => {
+  const handleBookRoom = (selectedDate?: Date, room?: RoomWithDetails) => {
     setSelectedRoom(room || null)
+    setSelectedDate(selectedDate || null)
     setShowBookingModal(true)
   }
 
@@ -236,10 +238,14 @@ export function RoomsPage() {
       {/* Booking Modal */}
       <BookingModal
         isOpen={showBookingModal}
-        onClose={() => setShowBookingModal(false)}
+        onClose={() => {
+          setShowBookingModal(false)
+          setSelectedDate(null)
+        }}
         onSuccess={handleBookingSuccess}
         room={selectedRoom}
         rooms={rooms}
+        selectedDate={selectedDate}
       />
 
       {/* Edit Booking Modal */}

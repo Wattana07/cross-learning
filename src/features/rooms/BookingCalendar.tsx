@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 interface BookingCalendarProps {
   rooms: RoomWithDetails[]
   bookings: RoomBooking[]
-  onBookRoom: (room?: RoomWithDetails) => void
+  onBookRoom: (selectedDate?: Date, room?: RoomWithDetails) => void
 }
 
 export function BookingCalendar({ rooms, bookings, onBookRoom }: BookingCalendarProps) {
@@ -147,7 +147,7 @@ export function BookingCalendar({ rooms, bookings, onBookRoom }: BookingCalendar
                 const diffDays = Math.floor((selectedDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
                 
                 if (diffDays >= 7) {
-                  onBookRoom()
+                  onBookRoom(date)
                 }
               }}
             >

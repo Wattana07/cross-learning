@@ -24,6 +24,7 @@ interface BookingModalProps {
   onSuccess: () => void
   room?: RoomWithDetails | null
   rooms: RoomWithDetails[]
+  selectedDate?: Date | null
 }
 
 // Time slots (can be customized)
@@ -35,7 +36,7 @@ const TIME_SLOTS = [
   { value: '17:00-19:00', label: '17:00 - 19:00' },
 ]
 
-export function BookingModal({ isOpen, onClose, onSuccess, room, rooms }: BookingModalProps) {
+export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selectedDate }: BookingModalProps) {
   const { profile, user } = useAuthContext()
   const { success, error: showError } = useToast()
   const [loading, setLoading] = useState(false)
@@ -82,6 +83,16 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms }: Bookin
       const initialRoomId = room?.id || ''
       // Auto-fill email from profile
       const userEmail = profile?.email || user?.email || ''
+      
+      // Format selected date if provided
+      let bookingDate = ''
+      if (selectedDate) {
+        const year = selectedDate.getFullYear()
+        const month = String(selectedDate.getMonth() + 1).padStart(2, '0')
+        const day = String(selectedDate.getDate()).padStart(2, '0')
+        bookingDate = `${year}-${month}-${day}`
+      }
+      
       setFormData({
         room_category_id: '',
         room_id: initialRoomId,
@@ -89,7 +100,7 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms }: Bookin
         event_title: '',
         speaker_name: '',
         event_description: '',
-        booking_date: '',
+        booking_date: bookingDate,
         time_slot: '',
         room_type_id: '',
         additional_equipment: '',
@@ -106,7 +117,7 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms }: Bookin
         })
         .catch((err) => console.error('Error fetching categories:', err))
     }
-  }, [isOpen, room?.id, rooms])
+  }, [isOpen, room?.id, rooms, selectedDate])
 
   // Load rooms and table layouts when category changes
   useEffect(() => {

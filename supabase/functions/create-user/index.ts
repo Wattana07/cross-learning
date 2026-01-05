@@ -487,13 +487,29 @@ Deno.serve(async (req) => {
           console.error('Resend API error:', {
             status: resendResponse.status,
             statusText: resendResponse.statusText,
-            data: resendData
+            data: resendData,
+            fromEmail: fromEmail,
+            toEmail: email
           });
+          
+          // Check if error is about domain verification
+          const errorMessage = resendData.message || JSON.stringify(resendData);
+          const isDomainError = errorMessage.includes('not verified') || 
+                               errorMessage.includes('verify your domain') ||
+                               errorMessage.includes('testing emails') ||
+                               resendResponse.status === 403;
+          
+          let suggestion = '';
+          if (isDomainError) {
+            suggestion = 'To send emails to any address (including gmail.com), please verify your domain in Resend Dashboard (https://resend.com/domains) and set RESEND_FROM in Supabase Secrets to use verified domain email (e.g., noreply@yourdomain.com). See VERIFY_RESEND_DOMAIN.md for detailed instructions.';
+          }
+          
           return new Response(JSON.stringify({ 
             ok: true, 
             userId: newUser.user.id,
             warning: 'User created but email sending failed',
-            emailError: `Resend API error (${resendResponse.status}): ${resendData.message || JSON.stringify(resendData)}`
+            emailError: `Resend API error (${resendResponse.status}): ${errorMessage}`,
+            suggestion: suggestion
           }), {
             headers: { 
               "Content-Type": "application/json",

@@ -141,35 +141,56 @@ export async function fetchRecentUsers(): Promise<RecentUser[]> {
 export async function fetchTodayBookings(): Promise<TodayBooking[]> {
   try {
     const today = new Date().toISOString().split('T')[0]
-    const { data, error } = await supabase
+    
+    // Fetch bookings first
+    const { data: bookings, error: bookingsError } = await supabase
       .from('room_bookings')
-      .select(`
-        id,
-        start_at,
-        end_at,
-        status,
-        room_id,
-        user_id,
-        rooms(name),
-        profiles(full_name)
-      `)
+      .select('id, start_at, end_at, status, room_id, booked_by_user_id')
       .eq('status', 'approved')
       .gte('start_at', `${today}T00:00:00`)
       .lt('start_at', `${today}T23:59:59`)
       .order('start_at', { ascending: true })
       .limit(10)
 
-    if (error) throw error
+    if (bookingsError) throw bookingsError
+    
+    if (!bookings || bookings.length === 0) {
+      return []
+    }
+
+    // Fetch rooms and profiles separately
+    const roomIds = [...new Set(bookings.map((b: any) => b.room_id).filter(Boolean))]
+    const userIds = [...new Set(bookings.map((b: any) => b.booked_by_user_id).filter(Boolean))]
+
+    const [roomsResult, profilesResult] = await Promise.all([
+      roomIds.length > 0 
+        ? supabase.from('rooms').select('id, name').in('id', roomIds) 
+        : { data: [], error: null },
+      userIds.length > 0 
+        ? supabase.from('profiles').select('id, full_name').in('id', userIds) 
+        : { data: [], error: null },
+    ])
+
+    if (roomsResult.error) console.error('Error fetching rooms:', roomsResult.error)
+    if (profilesResult.error) console.error('Error fetching profiles:', profilesResult.error)
+
+    const roomsMap = new Map((roomsResult.data || []).map((r: any) => [r.id, r]))
+    const profilesMap = new Map((profilesResult.data || []).map((p: any) => [p.id, p]))
 
     // Transform the data to match the interface
-    return (data || []).map((booking: any) => ({
-      id: booking.id,
-      room_name: (booking.rooms as any)?.name || 'Unknown Room',
-      user_name: (booking.profiles as any)?.full_name || 'Unknown User',
-      start_at: booking.start_at,
-      end_at: booking.end_at,
-      status: booking.status,
-    }))
+    return bookings.map((booking: any) => {
+      const room = roomsMap.get(booking.room_id)
+      const profile = profilesMap.get(booking.booked_by_user_id)
+      
+      return {
+        id: booking.id,
+        room_name: room?.name || 'Unknown Room',
+        user_name: profile?.full_name || 'Unknown User',
+        start_at: booking.start_at,
+        end_at: booking.end_at,
+        status: booking.status,
+      }
+    })
   } catch (error) {
     console.error('Error fetching today bookings:', error)
     return []

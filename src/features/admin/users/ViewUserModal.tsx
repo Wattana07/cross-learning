@@ -197,9 +197,9 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
         } : null,
         learning: {
           total_episodes: totalPublishedEpisodes,
-          completed_episodes,
-          in_progress_episodes,
-          progress_percent,
+          completed_episodes: completedEpisodes,
+          in_progress_episodes: inProgressEpisodes,
+          progress_percent: progressPercent,
         },
         bookings: {
           total: totalBookings,

@@ -447,12 +447,13 @@ Deno.serve(async (req) => {
 อีเมลนี้ถูกส่งอัตโนมัติ กรุณาอย่าตอบกลับ
             `.trim();
 
-        // Get from email address - use verified domain if available
-        // Priority: RESEND_FROM env var > DEFAULT_FROM > verified domain > fallback
-        // Try multiple verified domains to ensure compatibility with all email providers
+        // Get from email address
+        // Priority: RESEND_FROM env var > DEFAULT_FROM > fallback to onboarding@resend.dev
+        // Note: onboarding@resend.dev can only send to verified email addresses
+        // To send to any email (like gmail.com), you need to verify a domain in Resend
         const fromEmail = Deno.env.get("RESEND_FROM") || 
                          Deno.env.get("DEFAULT_FROM") || 
-                         'noreply@happympm.com'; // Use verified domain (happympm.com)
+                         'onboarding@resend.dev'; // Fallback to test domain
         
         console.log('Using from email:', fromEmail);
         

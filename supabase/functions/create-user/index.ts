@@ -462,8 +462,9 @@ Deno.serve(async (req) => {
             subject: `ยินดีต้อนรับสู่ระบบ - รหัสผ่านของคุณ`,
             html: emailHtml,
             text: emailText,
-            // Disable click tracking to avoid SSL certificate issues
+            // Disable all tracking to avoid SSL certificate issues and unsafe links
             click_tracking: false,
+            open_tracking: false,
           }),
         });
 

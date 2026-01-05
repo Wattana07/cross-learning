@@ -4,6 +4,7 @@ import { Card, Button, Input, Badge, Avatar, Spinner, Modal, ModalFooter } from 
 import { useToast } from '@/contexts/ToastContext'
 import { CreateUserModal } from './CreateUserModal'
 import { EditUserModal } from './EditUserModal'
+import { ViewUserModal } from './ViewUserModal'
 import {
   Users,
   Plus,
@@ -38,6 +39,7 @@ export function AdminUsersPage() {
   const [resettingPassword, setResettingPassword] = useState(false)
   const [resettingPasswordUser, setResettingPasswordUser] = useState<Profile | null>(null)
   const [newPassword, setNewPassword] = useState<string | null>(null)
+  const [viewingUser, setViewingUser] = useState<Profile | null>(null)
 
   // Fetch users
   const fetchUsers = async () => {
@@ -323,6 +325,13 @@ export function AdminUsersPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2 relative">
                         <button
+                          onClick={() => setViewingUser(user)}
+                          className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-primary-600"
+                          title="ดูรายละเอียด"
+                        >
+                          <Users className="w-5 h-5" />
+                        </button>
+                        <button
                           onClick={() =>
                             setActionMenuUser(
                               actionMenuUser === user.id ? null : user.id
@@ -471,6 +480,13 @@ export function AdminUsersPage() {
           }}
         />
       )}
+
+      {/* View User Modal */}
+      <ViewUserModal
+        user={viewingUser}
+        isOpen={viewingUser !== null}
+        onClose={() => setViewingUser(null)}
+      />
 
       {/* Delete Confirmation Modal */}
       <Modal

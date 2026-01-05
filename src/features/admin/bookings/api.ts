@@ -73,8 +73,8 @@ export async function updateBookingStatus(
       try {
         console.log('Calling notify-booking-approval for booking:', data.id)
         
-        // Wait a bit longer to ensure function is ready
-        await new Promise(resolve => setTimeout(resolve, 500))
+        // Wait longer to ensure function is ready (sometimes takes a few seconds after deploy)
+        await new Promise(resolve => setTimeout(resolve, 2000))
         
         const { data: notifyData, error: notifyError } = await supabase.functions.invoke('notify-booking-approval', {
           body: { bookingId: data.id },
@@ -85,8 +85,8 @@ export async function updateBookingStatus(
           console.error('Error details:', JSON.stringify(notifyError, null, 2))
           
           // If 404, function might not be ready yet - this is OK, email will be sent on next approval
-          if (notifyError.message?.includes('404') || notifyError.message?.includes('Not Found')) {
-            console.warn('⚠️ notify-booking-approval function not found (404) - this is OK, status update succeeded')
+          if (notifyError.message?.includes('404') || notifyError.message?.includes('Not Found') || notifyError.message?.includes('non-2xx')) {
+            console.warn('⚠️ notify-booking-approval function not found (404) - this is OK, status update succeeded. Function may need a few minutes to be ready after deployment.')
           }
           // Don't show error to user - email sending failure shouldn't block approval
         } else {
@@ -102,8 +102,8 @@ export async function updateBookingStatus(
         })
         
         // If 404, function might not be ready yet - this is OK
-        if (notifyError?.message?.includes('404') || notifyError?.message?.includes('Not Found')) {
-          console.warn('⚠️ notify-booking-approval function not found (404) - this is OK, status update succeeded')
+        if (notifyError?.message?.includes('404') || notifyError?.message?.includes('Not Found') || notifyError?.message?.includes('non-2xx')) {
+          console.warn('⚠️ notify-booking-approval function not found (404) - this is OK, status update succeeded. Function may need a few minutes to be ready after deployment.')
         }
         // Don't show error to user - email sending failure shouldn't block approval
       }

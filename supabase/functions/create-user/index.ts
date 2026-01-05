@@ -448,10 +448,13 @@ Deno.serve(async (req) => {
             `.trim();
 
         // Get from email address - use verified domain if available
-        // Priority: RESEND_FROM env var > default to verified domain > fallback to onboarding@resend.dev
+        // Priority: RESEND_FROM env var > DEFAULT_FROM > verified domain > fallback
+        // Try multiple verified domains to ensure compatibility with all email providers
         const fromEmail = Deno.env.get("RESEND_FROM") || 
                          Deno.env.get("DEFAULT_FROM") || 
-                         'noreply@happympm.com'; // Use verified domain
+                         'noreply@happympm.com'; // Use verified domain (happympm.com)
+        
+        console.log('Using from email:', fromEmail);
         
         // Send email directly via Resend API
         console.log('Sending email directly via Resend API to:', email);

@@ -156,6 +156,20 @@ export function ViewUserModal({ user, isOpen, onClose }: ViewUserModalProps) {
         console.error('Error fetching streak:', streakError)
       }
 
+      // Handle wallet
+      const wallet = walletResult.data || null
+      const walletError = walletResult.error
+      if (walletError && walletError.code !== 'PGRST116') {
+        console.error('Error fetching wallet:', walletError)
+      }
+
+      // Handle streak
+      const streak = streakResult.data || null
+      const streakError = streakResult.error
+      if (streakError && streakError.code !== 'PGRST116') {
+        console.error('Error fetching streak:', streakError)
+      }
+
       // Calculate learning progress
       const completedEpisodes = progressData.filter(
         (p) => p.completed_at !== null || (p.watched_percent ?? 0) >= 90

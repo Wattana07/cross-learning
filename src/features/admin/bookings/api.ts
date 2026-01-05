@@ -68,12 +68,25 @@ export async function updateBookingStatus(
   // If status is approved, send notification
   if (status === 'approved' && data) {
     try {
-      await supabase.functions.invoke('notify-booking-approval', {
+      console.log('Calling notify-booking-approval for booking:', data.id)
+      const { data: notifyData, error: notifyError } = await supabase.functions.invoke('notify-booking-approval', {
         body: { bookingId: data.id },
       })
-    } catch (notifyError) {
+      
+      if (notifyError) {
+        console.error('Error sending booking approval notification:', notifyError)
+        console.error('Error details:', JSON.stringify(notifyError, null, 2))
+      } else {
+        console.log('✅ Booking approval notification sent successfully:', notifyData)
+      }
+    } catch (notifyError: any) {
       // Log error but don't fail the status update
-      console.error('Error sending booking approval notification:', notifyError)
+      console.error('❌ Exception sending booking approval notification:', notifyError)
+      console.error('Exception details:', {
+        message: notifyError?.message,
+        stack: notifyError?.stack,
+        name: notifyError?.name,
+      })
     }
   }
 

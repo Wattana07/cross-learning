@@ -3,13 +3,16 @@
 //
 // วิธีตั้งค่า (Supabase Dashboard > Project Settings > Edge Functions > Secrets)
 // Required:
-// - RESEND_API_KEY = <your-resend-api-key>
+// - EMAILJS_SERVICE_ID = <your-emailjs-service-id>
+// - EMAILJS_TEMPLATE_ID = <your-emailjs-template-id>
+// - EMAILJS_PUBLIC_KEY = <your-emailjs-public-key>
+// - EMAILJS_PRIVATE_KEY = <your-emailjs-private-key>
 // Optional:
 // - INTERNAL_FUNCTION_KEY = <random-strong-secret>
 // - ALLOWED_ORIGINS = https://yourdomain.com
 //
 // Note: Supabase Edge Functions may not support direct SMTP connections,
-// so we use Resend API (HTTP-based) instead
+// so we use EmailJS as HTTP wrapper for Gmail SMTP
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -44,8 +47,9 @@ function stripHtmlToText(html: string) {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-// Send email via Resend API (HTTP-based, no SMTP needed)
-// Resend provides HTTP API and doesn't require domain verification for testing
+// Send email via Gmail SMTP using EmailJS as HTTP wrapper
+// Supabase Edge Functions may not support direct SMTP connections,
+// so we use EmailJS which provides HTTP API for Gmail SMTP
 async function sendEmailViaGmailSMTP(
   from: string,
   to: string[],
@@ -55,64 +59,103 @@ async function sendEmailViaGmailSMTP(
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   console.log('[sendEmailViaGmailSMTP] Starting...', { from, to, subject });
   
-  const resendApiKey = Deno.env.get("RESEND_API_KEY");
-  
-  console.log('[sendEmailViaGmailSMTP] Config check:', {
-    resendApiKey: !!resendApiKey,
+  const emailjsServiceId = Deno.env.get("EMAILJS_SERVICE_ID");
+  const emailjsTemplateId = Deno.env.get("EMAILJS_TEMPLATE_ID");
+  const emailjsPublicKey = Deno.env.get("EMAILJS_PUBLIC_KEY");
+  const emailjsPrivateKey = Deno.env.get("EMAILJS_PRIVATE_KEY");
+
+  console.log('[sendEmailViaGmailSMTP] EmailJS config:', {
+    serviceId: !!emailjsServiceId,
+    templateId: !!emailjsTemplateId,
+    publicKey: !!emailjsPublicKey,
+    privateKey: !!emailjsPrivateKey,
   });
 
-  if (!resendApiKey) {
-    console.error('[sendEmailViaGmailSMTP] Missing Resend API key');
-    return {
-      success: false,
-      error: "RESEND_API_KEY not configured in Supabase Secrets. Please add it in Project Settings > Edge Functions > Secrets",
-    };
-  }
-
-  try {
-    console.log('[sendEmailViaGmailSMTP] Calling Resend API...');
-    
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: from,
-        to: to,
-        subject: subject,
-        html: html,
-        text: text || (html ? stripHtmlToText(html) : undefined),
-      }),
-    });
-
-    console.log('[sendEmailViaGmailSMTP] Resend response status:', response.status);
-
-    if (response.ok) {
-      const data = await response.json();
-      console.log('[sendEmailViaGmailSMTP] Resend success:', data);
-      return {
-        success: true,
-        messageId: data.id || `resend-${Date.now()}`,
+  // Check if EmailJS is configured
+  if (emailjsServiceId && emailjsTemplateId && emailjsPublicKey && emailjsPrivateKey) {
+    console.log('[sendEmailViaGmailSMTP] Using EmailJS...');
+    try {
+      // EmailJS requires template parameters
+      // We'll send the email content as template parameters
+      const emailjsPayload = {
+        service_id: emailjsServiceId,
+        template_id: emailjsTemplateId,
+        user_id: emailjsPublicKey,
+        template_params: {
+          to_email: to[0], // EmailJS supports single recipient per call
+          subject: subject,
+          message: html || text || "",
+          html_content: html || "",
+          text_content: text || (html ? stripHtmlToText(html) : ""),
+          from_email: from,
+        },
       };
-    } else {
-      const errorData = await response.json().catch(async () => {
-        return { message: await response.text().catch(() => "Unknown error") };
+
+      console.log('[sendEmailViaGmailSMTP] Calling EmailJS API...');
+      const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${emailjsPrivateKey}`,
+        },
+        body: JSON.stringify(emailjsPayload),
       });
-      console.error('[sendEmailViaGmailSMTP] Resend error:', errorData);
+
+      console.log('[sendEmailViaGmailSMTP] EmailJS response status:', response.status);
+
+      if (response.ok) {
+        const responseText = await response.text().catch(() => "");
+        console.log('[sendEmailViaGmailSMTP] EmailJS success:', responseText);
+        
+        // Send to remaining recipients if any
+        if (to.length > 1) {
+          console.log('[sendEmailViaGmailSMTP] Sending to additional recipients...');
+          for (let i = 1; i < to.length; i++) {
+            const additionalPayload = {
+              ...emailjsPayload,
+              template_params: {
+                ...emailjsPayload.template_params,
+                to_email: to[i],
+              },
+            };
+            await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${emailjsPrivateKey}`,
+              },
+              body: JSON.stringify(additionalPayload),
+            });
+          }
+        }
+        
+        return {
+          success: true,
+          messageId: `emailjs-${Date.now()}`,
+        };
+      } else {
+        const errorData = await response.text().catch(() => "Unknown error");
+        console.error('[sendEmailViaGmailSMTP] EmailJS error:', errorData);
+        return {
+          success: false,
+          error: `EmailJS error (${response.status}): ${errorData}`,
+        };
+      }
+    } catch (error: any) {
+      console.error('[sendEmailViaGmailSMTP] EmailJS exception:', error);
       return {
         success: false,
-        error: `Resend error (${response.status}): ${errorData.message || JSON.stringify(errorData)}`,
+        error: `EmailJS request failed: ${error.message}`,
       };
     }
-  } catch (error: any) {
-    console.error('[sendEmailViaGmailSMTP] Resend exception:', error);
-    return {
-      success: false,
-      error: `Resend request failed: ${error.message}`,
-    };
   }
+
+  // If EmailJS is not configured, return helpful error
+  console.error('[sendEmailViaGmailSMTP] EmailJS not fully configured');
+  return {
+    success: false,
+    error: "EmailJS not fully configured. Please set EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, and EMAILJS_PRIVATE_KEY in Supabase Secrets. EmailJS acts as HTTP wrapper for Gmail SMTP.",
+  };
 }
 
 Deno.serve(async (req) => {
@@ -235,10 +278,16 @@ Deno.serve(async (req) => {
     // Get email config
     console.log('[send-email] Getting email config...');
     const defaultFrom = from || "webmaster@happympm.com";
+    const emailjsServiceId = Deno.env.get("EMAILJS_SERVICE_ID");
+    const emailjsTemplateId = Deno.env.get("EMAILJS_TEMPLATE_ID");
+    const emailjsPublicKey = Deno.env.get("EMAILJS_PUBLIC_KEY");
+    const emailjsPrivateKey = Deno.env.get("EMAILJS_PRIVATE_KEY");
 
     console.log('[send-email] Config check:', {
-      gmailUser: !!gmailUser,
-      gmailPassword: !!gmailPassword,
+      emailjsServiceId: !!emailjsServiceId,
+      emailjsTemplateId: !!emailjsTemplateId,
+      emailjsPublicKey: !!emailjsPublicKey,
+      emailjsPrivateKey: !!emailjsPrivateKey,
       defaultFrom,
     });
 

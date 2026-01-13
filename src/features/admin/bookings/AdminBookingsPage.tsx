@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Card, Button, Badge, Spinner, Input } from '@/components/ui'
 import { 
   Calendar, 
@@ -12,45 +12,65 @@ import {
   Mail,
   MoreVertical,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { fetchAllBookings, updateBookingStatus, deleteBooking, type BookingWithDetails } from './api'
 import { formatDate } from '@/lib/utils'
 import type { BookingStatus } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
+const ITEMS_PER_PAGE = 50
+
 export function AdminBookingsPage() {
   const [bookings, setBookings] = useState<BookingWithDetails[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | BookingStatus>('all')
   const [actionMenuBooking, setActionMenuBooking] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
 
-  const loadBookings = async () => {
+  const loadBookings = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchAllBookings()
-      setBookings(data)
+      const result = await fetchAllBookings({
+        limit: ITEMS_PER_PAGE,
+        offset: (currentPage - 1) * ITEMS_PER_PAGE,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        searchQuery: searchQuery || undefined,
+      })
+      setBookings(result.bookings)
+      setTotal(result.total)
     } catch (error: any) {
       console.error('Error fetching bookings:', error)
       alert('เกิดข้อผิดพลาด: ' + error.message)
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentPage, statusFilter, searchQuery])
 
   useEffect(() => {
     loadBookings()
-  }, [])
+  }, [loadBookings])
 
-  // Filter bookings
-  const filteredBookings = bookings.filter((booking) => {
-    const matchesSearch = !searchQuery || 
-      booking.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      booking.room_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      booking.booker_name?.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStatus = statusFilter === 'all' || booking.status === statusFilter
-    return matchesSearch && matchesStatus
-  })
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [statusFilter, searchQuery])
+
+  // Filter bookings (client-side for search within current page)
+  const filteredBookings = useMemo(() => {
+    if (!searchQuery) return bookings
+    const q = searchQuery.toLowerCase()
+    return bookings.filter((booking) => 
+      booking.title.toLowerCase().includes(q) ||
+      booking.room_name?.toLowerCase().includes(q) ||
+      booking.booker_name?.toLowerCase().includes(q)
+    )
+  }, [bookings, searchQuery])
+
+  const totalPages = Math.ceil(total / ITEMS_PER_PAGE)
 
   const handleStatusUpdate = async (bookingId: string, status: BookingStatus) => {
     try {
@@ -290,6 +310,40 @@ export function AdminBookingsPage() {
             )
           })}
         </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              แสดง {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, total)} จาก {total} รายการ
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1 || loading}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                ก่อนหน้า
+              </Button>
+              <div className="text-sm text-gray-600">
+                หน้า {currentPage} จาก {totalPages}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages || loading}
+              >
+                ถัดไป
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </Card>
       )}
     </div>
   )

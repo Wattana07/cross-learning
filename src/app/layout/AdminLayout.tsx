@@ -17,6 +17,7 @@ import {
   Menu,
   ChevronDown,
   Settings,
+  Mail,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -28,6 +29,7 @@ const navigation = [
   { name: 'บทเรียน', href: '/admin/episodes', icon: PlayCircle },
   { name: 'กติกาแต้ม', href: '/admin/rewards', icon: Trophy },
   { name: 'ห้องประชุม', href: '/admin/rooms', icon: DoorOpen },
+  { name: 'ทดสอบอีเมล', href: '/admin/email-test', icon: Mail },
   { name: 'รายงาน', href: '/admin/reports', icon: BarChart3 },
 ]
 

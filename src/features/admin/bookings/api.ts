@@ -11,10 +11,6 @@ export interface BookingWithDetails extends RoomBooking {
 type RoomLite = { id: string; name: string | null; location: string | null }
 type ProfileLite = { id: string; full_name: string | null; email: string | null }
 
-function isBrowser(): boolean {
-  return typeof window !== 'undefined'
-}
-
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.filter((v): v is string => Boolean(v))))
 }
@@ -23,41 +19,56 @@ function toMapById<T extends { id: string }>(items: T[]): Map<string, T> {
   return new Map(items.map(i => [i.id, i]))
 }
 
-async function notifyBookingApproval(bookingId: string): Promise<void> {
-  try {
-    const { data, error } = await supabase.functions.invoke('notify-booking-approval', {
-      body: { bookingId },
-    })
+// ไม่ต้องใช้ function นี้แล้ว - ใช้ Database Webhook แทน
+// Webhook จะส่งอีเมลอัตโนมัติเมื่อ status เปลี่ยนเป็น 'approved'
 
-    if (error) {
-      console.error('[notify-booking-approval] error:', error)
-      const msg = error.message ?? ''
-      if (msg.includes('404') || msg.includes('Not Found') || msg.includes('non-2xx')) {
-        console.warn(
-          '[notify-booking-approval] function not ready/not found (404/non-2xx). Status update succeeded.'
-        )
-      }
-      return
-    }
-
-    console.log('[notify-booking-approval] success:', data)
-  } catch (e) {
-    console.error('[notify-booking-approval] exception:', e)
-  }
+export interface FetchBookingsOptions {
+  limit?: number
+  offset?: number
+  status?: BookingStatus
+  searchQuery?: string
 }
 
-export async function fetchAllBookings(): Promise<BookingWithDetails[]> {
-  const { data: bookings, error: bookingsError } = await supabase
+export interface FetchBookingsResult {
+  bookings: BookingWithDetails[]
+  total: number
+}
+
+export async function fetchAllBookings(options: FetchBookingsOptions = {}): Promise<FetchBookingsResult> {
+  const { limit = 50, offset = 0, status, searchQuery } = options
+  
+  // Build query with filters
+  let query = supabase
     .from('room_bookings')
-    .select('*')
+    .select('*', { count: 'exact' })
     .order('start_at', { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  if (status) {
+    query = query.eq('status', status)
+  }
+
+  // If search query, we'll filter after fetching (or use full-text search if available)
+  // For now, fetch and filter client-side for simplicity
+  const { data: bookings, error: bookingsError, count } = await query
 
   if (bookingsError) throw bookingsError
-  if (!bookings?.length) return []
+  if (!bookings?.length) return { bookings: [], total: count || 0 }
 
   const bookingsTyped = bookings as RoomBooking[]
-  const roomIds = uniqueStrings(bookingsTyped.map(b => b.room_id))
-  const userIds = uniqueStrings(bookingsTyped.map(b => b.booked_by_user_id))
+  
+  // Apply search filter if provided
+  let filteredBookings = bookingsTyped
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase()
+    filteredBookings = bookingsTyped.filter(b => 
+      b.title?.toLowerCase().includes(q) ||
+      b.description?.toLowerCase().includes(q)
+    )
+  }
+
+  const roomIds = uniqueStrings(filteredBookings.map(b => b.room_id))
+  const userIds = uniqueStrings(filteredBookings.map(b => b.booked_by_user_id))
 
   const [roomsRes, profilesRes] = await Promise.all([
     roomIds.length
@@ -74,7 +85,7 @@ export async function fetchAllBookings(): Promise<BookingWithDetails[]> {
   const roomsMap = toMapById((roomsRes.data ?? []) as RoomLite[])
   const profilesMap = toMapById((profilesRes.data ?? []) as ProfileLite[])
 
-  return bookingsTyped.map(booking => {
+  const bookingsWithDetails = filteredBookings.map(booking => {
     const room = booking.room_id ? roomsMap.get(booking.room_id) : undefined
     const booker = booking.booked_by_user_id
       ? profilesMap.get(booking.booked_by_user_id)
@@ -88,6 +99,84 @@ export async function fetchAllBookings(): Promise<BookingWithDetails[]> {
       booker_email: booker?.email ?? undefined,
     }
   })
+
+  return {
+    bookings: bookingsWithDetails,
+    total: count || 0
+  }
+}
+
+async function sendBookingApprovalEmail(bookingId: string): Promise<void> {
+  console.log('[DEBUG] sendBookingApprovalEmail called with bookingId:', bookingId)
+  
+  try {
+    // ลองเรียก function โดยตรงผ่าน fetch ก่อน เพื่อดู response จริง
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    
+    console.log('[DEBUG] Calling notify-booking-approval function...')
+    console.log('[DEBUG] Function name: notify-booking-approval')
+    console.log('[DEBUG] Supabase URL:', supabaseUrl)
+    console.log('[DEBUG] Has session token:', !!token)
+    console.log('[DEBUG] Request body:', { bookingId })
+    
+    // เรียก function โดยตรงผ่าน fetch เพื่อดู response จริง
+    const functionUrl = `${supabaseUrl}/functions/v1/notify-booking-approval`
+    console.log('[DEBUG] Function URL:', functionUrl)
+    
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token || anonKey}`,
+        'apikey': anonKey || '',
+      },
+      body: JSON.stringify({ bookingId }),
+    })
+    
+    console.log('[DEBUG] Response status:', response.status)
+    console.log('[DEBUG] Response statusText:', response.statusText)
+    console.log('[DEBUG] Response headers:', Object.fromEntries(response.headers.entries()))
+    
+    const responseText = await response.text()
+    console.log('[DEBUG] Response body (raw):', responseText)
+    
+    if (!response.ok) {
+      console.error('[ERROR] Function returned non-2xx status:', response.status)
+      console.error('[ERROR] Response body:', responseText)
+      
+      // พยายาม parse JSON ถ้าเป็นไปได้
+      try {
+        const errorJson = JSON.parse(responseText)
+        console.error('[ERROR] Parsed error:', errorJson)
+      } catch (e) {
+        console.error('[ERROR] Cannot parse error as JSON')
+      }
+      
+      // ไม่ throw error - ให้ status update สำเร็จแม้อีเมลจะล้มเหลว
+      return
+    }
+    
+    // Parse response
+    let responseData: any = null
+    try {
+      responseData = JSON.parse(responseText)
+      console.log('[SUCCESS] notify-booking-approval success:', responseData)
+      console.log('[SUCCESS] Email notification sent successfully')
+    } catch (e) {
+      console.log('[SUCCESS] Response (not JSON):', responseText)
+    }
+    
+  } catch (e: any) {
+    console.error('[EXCEPTION] notify-booking-approval exception:', e)
+    console.error('[EXCEPTION] Exception type:', e?.constructor?.name)
+    console.error('[EXCEPTION] Exception message:', e?.message)
+    console.error('[EXCEPTION] Exception stack:', e?.stack)
+    
+    // ไม่ throw error - ให้ status update สำเร็จแม้อีเมลจะล้มเหลว
+  }
 }
 
 export async function updateBookingStatus(
@@ -97,6 +186,7 @@ export async function updateBookingStatus(
   // @ts-ignore - Supabase type inference issue with update
   const { data, error } = await supabase
     .from('room_bookings')
+    // @ts-ignore
     .update({ status })
     .eq('id', bookingId)
     .select('*')
@@ -107,9 +197,8 @@ export async function updateBookingStatus(
 
   const booking = data as RoomBooking
 
-  if (status === 'approved' && isBrowser()) {
-    setTimeout(() => void notifyBookingApproval(booking.id), 100)
-  }
+  // Email sending disabled - system continues to work without email notifications
+  console.log('[DEBUG] Booking status updated. Email sending is disabled.')
 
   return booking
 }

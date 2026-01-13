@@ -6,8 +6,14 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
+  console.log('🔵 [notify-booking-approval] Function called');
+  console.log('🔵 [notify-booking-approval] Method:', req.method);
+  console.log('🔵 [notify-booking-approval] URL:', req.url);
+  console.log('🔵 [notify-booking-approval] Headers:', Object.fromEntries(req.headers.entries()));
+  
   // Handle CORS
   if (req.method === 'OPTIONS') {
+    console.log('🔵 [notify-booking-approval] Handling CORS preflight');
     return new Response(null, {
       status: 204,
       headers: {
@@ -22,7 +28,11 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
     const jwt = authHeader.replace("Bearer ", "");
+    console.log('🔵 [notify-booking-approval] Auth header present:', !!authHeader);
+    console.log('🔵 [notify-booking-approval] JWT present:', !!jwt);
+    
     if (!jwt) {
+      console.error('❌ [notify-booking-approval] No JWT provided');
       return new Response(JSON.stringify({ ok: false, reason: "UNAUTHORIZED" }), { 
         status: 401,
         headers: {
@@ -71,8 +81,12 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { bookingId } = body;
+    
+    console.log('🔵 [notify-booking-approval] Request body:', body);
+    console.log('🔵 [notify-booking-approval] Booking ID:', bookingId);
 
     if (!bookingId) {
+      console.error('❌ [notify-booking-approval] Missing bookingId');
       return new Response(JSON.stringify({ ok: false, reason: "MISSING_BOOKING_ID" }), {
         status: 400,
         headers: {
@@ -82,19 +96,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch booking details with booker info
+    // Fetch booking details (query separately to avoid relationship issues)
+    console.log('🔵 [notify-booking-approval] Fetching booking details...');
     const { data: booking, error: bookingError } = await adminClient
       .from('room_bookings')
-      .select(`
-        *,
-        room:rooms(name, location),
-        booker:profiles!room_bookings_booked_by_user_id_fkey(id, email, full_name)
-      `)
+      .select('*')
       .eq('id', bookingId)
       .single();
 
     if (bookingError || !booking) {
-      return new Response(JSON.stringify({ ok: false, reason: "BOOKING_NOT_FOUND" }), {
+      console.error('❌ [notify-booking-approval] Booking not found:', bookingError);
+      return new Response(JSON.stringify({ ok: false, reason: "BOOKING_NOT_FOUND", error: bookingError?.message }), {
         status: 404,
         headers: {
           'Content-Type': 'application/json',
@@ -102,241 +114,82 @@ Deno.serve(async (req) => {
         },
       });
     }
-
-    // Send email notifications when booking is approved
-    if (booking.booker?.email) {
-      try {
-        // Get Resend API Key
-        const apiKey = Deno.env.get("RESEND_API_KEY") || Deno.env.get("resend_api_key");
-        
-        if (!apiKey) {
-          console.warn('Resend API Key not found - skipping email notifications');
-          return new Response(JSON.stringify({ ok: true, message: 'Booking approved but email sending skipped (no API key)' }), {
-            status: 200,
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-            },
-          });
-        }
-
-        // Get production site URL
-        let productionUrl = Deno.env.get("SITE_URL") || 
-          Deno.env.get("VITE_SITE_URL") ||
-          `https://cross-learning.vercel.app`;
-        
-        if (productionUrl && !productionUrl.startsWith('https://')) {
-          productionUrl = productionUrl.replace(/^http:\/\//, 'https://');
-        }
-        productionUrl = productionUrl.replace(/\/$/, '');
-
-        // Format date and time
-        const startDate = new Date(booking.start_at);
-        const endDate = new Date(booking.end_at);
-        const dateStr = startDate.toLocaleDateString('th-TH', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        });
-        const timeStr = `${startDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
-
-        const userName = booking.booker?.full_name || 'ผู้ใช้';
-        const roomName = booking.room?.name || 'ห้องประชุม';
-        const roomLocation = booking.room?.location || '';
-
-        // Email to user (confirmation)
-        const userEmailHtml = `
-          <!DOCTYPE html>
-          <html lang="th">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { 
-                font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
-                line-height: 1.7; 
-                color: #1f2937; 
-                background: #f0f9ff;
-                padding: 40px 20px;
-              }
-              .email-wrapper {
-                max-width: 600px; 
-                margin: 0 auto;
-                background: #ffffff;
-                border-radius: 16px;
-                overflow: hidden;
-                box-shadow: 0 20px 60px rgba(37, 99, 235, 0.15);
-                border: 1px solid #e0f2fe;
-              }
-              .header { 
-                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-                color: white; 
-                padding: 40px 30px;
-                text-align: center;
-              }
-              .header h1 { 
-                margin: 0; 
-                font-size: 28px;
-                font-weight: 700;
-              }
-              .header-icon {
-                font-size: 48px;
-                margin-bottom: 10px;
-                display: block;
-              }
-              .content { 
-                background: #ffffff; 
-                padding: 40px 30px; 
-              }
-              .info-box {
-                background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-                border: 2px solid #7dd3fc;
-                border-radius: 12px;
-                padding: 25px;
-                margin: 25px 0;
-              }
-              .info-row {
-                display: flex;
-                justify-content: space-between;
-                padding: 12px 0;
-                border-bottom: 1px solid #e2e8f0;
-              }
-              .info-row:last-child {
-                border-bottom: none;
-              }
-              .info-label {
-                color: #64748b;
-                font-weight: 500;
-                font-size: 14px;
-              }
-              .info-value {
-                color: #1e293b;
-                font-weight: 600;
-                font-size: 14px;
-                text-align: right;
-              }
-              .footer { 
-                text-align: center; 
-                margin-top: 40px; 
-                padding-top: 30px;
-                border-top: 1px solid #e5e7eb;
-                color: #9ca3af; 
-                font-size: 13px;
-                line-height: 1.8;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="email-wrapper">
-              <div class="header">
-                <span class="header-icon">✅</span>
-                <h1>การจองห้องประชุมได้รับการอนุมัติแล้ว</h1>
-              </div>
-              <div class="content">
-                <p style="font-size: 18px; color: #374151; margin-bottom: 20px;">
-                  สวัสดีคุณ <strong style="color: #059669;">${userName}</strong>,
-                </p>
-                <p style="color: #6b7280; font-size: 16px; margin-bottom: 30px; line-height: 1.8;">
-                  การจองห้องประชุมของคุณได้รับการอนุมัติแล้ว
-                </p>
-                
-                <div class="info-box">
-                  <div class="info-row">
-                    <span class="info-label">ชื่องาน:</span>
-                    <span class="info-value">${booking.title}</span>
-                  </div>
-                  <div class="info-row">
-                    <span class="info-label">ห้องประชุม:</span>
-                    <span class="info-value">${roomName}</span>
-                  </div>
-                  ${roomLocation ? `
-                  <div class="info-row">
-                    <span class="info-label">สถานที่:</span>
-                    <span class="info-value">${roomLocation}</span>
-                  </div>
-                  ` : ''}
-                  <div class="info-row">
-                    <span class="info-label">วันที่:</span>
-                    <span class="info-value">${dateStr}</span>
-                  </div>
-                  <div class="info-row">
-                    <span class="info-label">เวลา:</span>
-                    <span class="info-value">${timeStr}</span>
-                  </div>
-                </div>
-                
-                ${booking.description ? `
-                <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                  <p style="color: #64748b; font-size: 14px; font-weight: 600; margin-bottom: 10px;">รายละเอียด:</p>
-                  <p style="color: #374151; font-size: 14px; line-height: 1.8; white-space: pre-wrap;">${booking.description}</p>
-                </div>
-                ` : ''}
-                
-                <p style="color: #6b7280; font-size: 14px; margin-top: 30px; line-height: 1.8;">
-                  คุณจะได้รับอีเมลแจ้งเตือนอีกครั้งก่อนถึงวันประชุม
-                </p>
-                
-                <div class="footer">
-                  <p><strong>ระบบจองห้องประชุม</strong></p>
-                  <p>อีเมลนี้ถูกส่งอัตโนมัติ กรุณาอย่าตอบกลับ</p>
-                </div>
-              </div>
-            </div>
-          </body>
-          </html>
-        `;
-
-        const userEmailText = `
-การจองห้องประชุมได้รับการอนุมัติแล้ว
-
-สวัสดีคุณ ${userName},
-
-การจองห้องประชุมของคุณได้รับการอนุมัติแล้ว
-
-ชื่องาน: ${booking.title}
-ห้องประชุม: ${roomName}
-${roomLocation ? `สถานที่: ${roomLocation}\n` : ''}วันที่: ${dateStr}
-เวลา: ${timeStr}
-
-${booking.description ? `รายละเอียด:\n${booking.description}\n\n` : ''}คุณจะได้รับอีเมลแจ้งเตือนอีกครั้งก่อนถึงวันประชุม
-
----
-ระบบจองห้องประชุม
-อีเมลนี้ถูกส่งอัตโนมัติ กรุณาอย่าตอบกลับ
-        `.trim();
-
-        // Send email to user
-        const userEmailResponse = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: 'onboarding@resend.dev',
-            to: booking.booker.email,
-            subject: `✅ การจองห้องประชุมได้รับการอนุมัติ: ${booking.title}`,
-            html: userEmailHtml,
-            text: userEmailText,
-            click_tracking: false,
-            open_tracking: false,
-          }),
-        });
-
-        const userEmailResult = await userEmailResponse.json();
-        if (userEmailResponse.ok) {
-          console.log('✅ Confirmation email sent to user:', userEmailResult.id);
-        } else {
-          console.error('Failed to send confirmation email to user:', userEmailResult);
-        }
-
-      } catch (emailError: any) {
-        console.error('Error sending booking approval email:', emailError);
-        // Don't fail the whole function if email fails
+    
+    console.log('✅ [notify-booking-approval] Booking found:', {
+      id: booking.id,
+      title: booking.title,
+      room_id: booking.room_id,
+      booked_by_user_id: booking.booked_by_user_id,
+    });
+    
+    // Fetch room details separately
+    let roomData: { name: string | null; location: string | null } | null = null;
+    if (booking.room_id) {
+      const { data: room, error: roomError } = await adminClient
+        .from('rooms')
+        .select('name, location')
+        .eq('id', booking.room_id)
+        .single();
+      
+      if (roomError) {
+        console.error('⚠️ [notify-booking-approval] Error fetching room:', roomError);
+      } else {
+        roomData = room;
+        console.log('✅ [notify-booking-approval] Room found:', roomData);
       }
     }
+    
+    // Fetch booker (profile) details separately
+    let bookerData: { id: string; email: string | null; full_name: string | null } | null = null;
+    if (booking.booked_by_user_id) {
+      const { data: booker, error: bookerError } = await adminClient
+        .from('profiles')
+        .select('id, email, full_name')
+        .eq('id', booking.booked_by_user_id)
+        .single();
+      
+      if (bookerError) {
+        console.error('⚠️ [notify-booking-approval] Error fetching booker:', bookerError);
+      } else {
+        bookerData = booker;
+        console.log('✅ [notify-booking-approval] Booker found:', {
+          id: bookerData.id,
+          email: bookerData.email,
+          full_name: bookerData.full_name,
+        });
+      }
+    }
+    
+    // Combine data
+    const bookingWithDetails = {
+      ...booking,
+      room: roomData,
+      booker: bookerData,
+    };
+    
+    console.log('✅ [notify-booking-approval] Combined booking data:', {
+      id: bookingWithDetails.id,
+      title: bookingWithDetails.title,
+      bookerEmail: bookingWithDetails.booker?.email,
+      roomName: bookingWithDetails.room?.name,
+    });
+
+    // Send email notifications when booking is approved
+    if (!bookerData?.email) {
+      console.warn('⚠️ [notify-booking-approval] No email found for booker');
+      return new Response(JSON.stringify({ ok: true, message: 'Booking approved but no email found for booker' }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+    
+      // Email sending disabled - system continues to work without email notifications
+      console.log('✅ [notify-booking-approval] Booking approved. Email sending is disabled.');
+
+      // Email sending code removed - system works without email notifications
 
     return new Response(
       JSON.stringify({

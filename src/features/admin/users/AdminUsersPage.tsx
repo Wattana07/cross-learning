@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Card, Button, Input, Badge, Avatar, Spinner, Modal, ModalFooter } from '@/components/ui'
 import { useToast } from '@/contexts/ToastContext'
@@ -41,14 +41,15 @@ export function AdminUsersPage() {
   const [newPassword, setNewPassword] = useState<string | null>(null)
   const [viewingUser, setViewingUser] = useState<Profile | null>(null)
 
-  // Fetch users
-  const fetchUsers = async () => {
+  // Fetch users with limit
+  const fetchUsers = useCallback(async () => {
     setLoading(true)
     try {
       let query = supabase
         .from('profiles')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('created_at', { ascending: false })
+        .limit(100) // Limit to 100 users per load
 
       if (roleFilter !== 'all') {
         query = query.eq('role', roleFilter)
@@ -56,6 +57,12 @@ export function AdminUsersPage() {
 
       if (statusFilter !== 'all') {
         query = query.eq('is_active', statusFilter === 'active')
+      }
+
+      // Apply search filter at database level if possible
+      if (searchQuery) {
+        // For now, filter client-side after fetch
+        // Could be optimized with full-text search if needed
       }
 
       const { data, error } = await query
@@ -67,22 +74,22 @@ export function AdminUsersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [roleFilter, statusFilter])
 
   useEffect(() => {
     fetchUsers()
-  }, [roleFilter, statusFilter])
+  }, [fetchUsers])
 
-  // Filter by search
-  const filteredUsers = users.filter((user) => {
-    if (!searchQuery) return true
+  // Filter by search (memoized)
+  const filteredUsers = useMemo(() => {
+    if (!searchQuery) return users
     const q = searchQuery.toLowerCase()
-    return (
+    return users.filter((user) => 
       user.email.toLowerCase().includes(q) ||
       user.full_name?.toLowerCase().includes(q) ||
       user.department?.toLowerCase().includes(q)
     )
-  })
+  }, [users, searchQuery])
 
   // Toggle user status
   const toggleUserStatus = async (user: Profile) => {
@@ -154,38 +161,82 @@ export function AdminUsersPage() {
     }
   }
 
-  // Delete user
+  // Delete user with retry logic
   const deleteUser = async (user: Profile) => {
     setDeleting(true)
-    try {
-      const { data, error } = await supabase.functions.invoke('delete-user', {
-        body: { userId: user.id },
-      })
+    const maxRetries = 3
+    let lastError: any = null
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[deleteUser] Attempt ${attempt}/${maxRetries} to delete user ${user.id}`)
+        
+        const { data, error } = await supabase.functions.invoke('delete-user', {
+          body: { userId: user.id },
+        })
 
-      if (error) throw error
-      
-      if (!data.ok) {
-        const errorMessages: Record<string, string> = {
-          NOT_ADMIN: 'คุณไม่มีสิทธิ์ในการลบผู้ใช้',
-          MISSING_USER_ID: 'ไม่พบ ID ผู้ใช้',
-          CANNOT_DELETE_SELF: 'ไม่สามารถลบบัญชีของตนเองได้',
-          USER_NOT_FOUND: 'ไม่พบผู้ใช้',
-          PROFILE_DELETE_ERROR: 'เกิดข้อผิดพลาดในการลบ profile',
-          AUTH_DELETE_ERROR: 'เกิดข้อผิดพลาดในการลบ auth user',
+        if (error) {
+          // Check if it's a network error
+          if (error.message?.includes('Failed to send') || error.message?.includes('ERR_INTERNET_DISCONNECTED')) {
+            lastError = error
+            if (attempt < maxRetries) {
+              console.log(`[deleteUser] Network error, retrying in ${attempt * 1000}ms...`)
+              await new Promise(resolve => setTimeout(resolve, attempt * 1000))
+              continue
+            }
+          }
+          throw error
         }
-        throw new Error(errorMessages[data.reason] || data.reason || 'เกิดข้อผิดพลาด')
-      }
+        
+        if (!data.ok) {
+          const errorMessages: Record<string, string> = {
+            NOT_ADMIN: 'คุณไม่มีสิทธิ์ในการลบผู้ใช้',
+            MISSING_USER_ID: 'ไม่พบ ID ผู้ใช้',
+            CANNOT_DELETE_SELF: 'ไม่สามารถลบบัญชีของตนเองได้',
+            USER_NOT_FOUND: 'ไม่พบผู้ใช้',
+            PROFILE_DELETE_ERROR: 'เกิดข้อผิดพลาดในการลบ profile',
+            AUTH_DELETE_ERROR: 'เกิดข้อผิดพลาดในการลบ auth user',
+          }
+          const errorMessage = errorMessages[data.reason] || data.reason || 'เกิดข้อผิดพลาด'
+          
+          // Don't retry for business logic errors
+          if (data.reason === 'USER_NOT_FOUND' || data.reason === 'NOT_ADMIN' || data.reason === 'CANNOT_DELETE_SELF') {
+            throw new Error(errorMessage)
+          }
+          
+          lastError = new Error(errorMessage)
+          if (attempt < maxRetries) {
+            console.log(`[deleteUser] Error: ${errorMessage}, retrying in ${attempt * 1000}ms...`)
+            await new Promise(resolve => setTimeout(resolve, attempt * 1000))
+            continue
+          }
+          throw lastError
+        }
 
-      success(`ลบผู้ใช้ "${user.full_name || user.email}" สำเร็จ`)
-      setDeletingUser(null)
-      fetchUsers()
-    } catch (error: any) {
-      console.error('Error deleting user:', error)
-      showError(error.message || 'ไม่สามารถลบผู้ใช้ได้')
-    } finally {
-      setDeleting(false)
-      setActionMenuUser(null)
+        success(`ลบผู้ใช้ "${user.full_name || user.email}" สำเร็จ`)
+        setDeletingUser(null)
+        fetchUsers()
+        return // Success, exit function
+      } catch (error: any) {
+        lastError = error
+        console.error(`[deleteUser] Attempt ${attempt} failed:`, error)
+        
+        // If it's the last attempt or a non-retryable error, show error
+        if (attempt === maxRetries || 
+            error.message?.includes('ไม่พบผู้ใช้') ||
+            error.message?.includes('ไม่มีสิทธิ์') ||
+            error.message?.includes('ลบบัญชีของตนเอง')) {
+          showError(error.message || 'ไม่สามารถลบผู้ใช้ได้')
+          break
+        }
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000))
+      }
     }
+    
+    setDeleting(false)
+    setActionMenuUser(null)
   }
 
   return (

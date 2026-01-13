@@ -3,6 +3,16 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Add timeout helper
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(new Error('Request timeout')), timeoutMs)
+    )
+  ])
+}
+
 type Body = {
   userId: string;
 };
@@ -77,15 +87,32 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check if user exists
-    const { data: targetUser, error: userCheckError } = await adminClient
-      .from("profiles")
-      .select("id, role")
-      .eq("id", userId)
-      .single();
-
-    if (userCheckError || !targetUser) {
-      return new Response(JSON.stringify({ ok: false, reason: "USER_NOT_FOUND" }), { 
+    // Check if user exists (with timeout)
+    console.log(`[delete-user] Checking if user exists: ${userId}`);
+    let targetUser;
+    try {
+      const queryPromise = adminClient
+        .from("profiles")
+        .select("id, role")
+        .eq("id", userId)
+        .single();
+      
+      const result = await withTimeout(queryPromise, 10000); // 10 second timeout
+      
+      if (result.error || !result.data) {
+        console.log(`[delete-user] User not found: ${userId}`);
+        return new Response(JSON.stringify({ ok: false, reason: "USER_NOT_FOUND" }), { 
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+      targetUser = result.data;
+    } catch (timeoutError: any) {
+      console.error(`[delete-user] Timeout or error checking user:`, timeoutError);
+      return new Response(JSON.stringify({ ok: false, reason: "TIMEOUT", error: "Request timeout while checking user" }), { 
         status: 200,
         headers: {
           'Content-Type': 'application/json',

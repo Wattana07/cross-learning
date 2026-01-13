@@ -25,6 +25,7 @@ import { AdminSubjectsPage } from '@/features/admin/subjects'
 import { AdminEpisodesPage } from '@/features/admin/episodes'
 import { AdminRewardsPage } from '@/features/admin/rewards'
 import { AdminRoomsPage } from '@/features/admin/rooms'
+import { EmailTestPage } from '@/features/admin/email-test/EmailTestPage'
 
 // Placeholder pages for routes that aren't implemented yet
 function PlaceholderPage({ title }: { title: string }) {
@@ -88,6 +89,7 @@ const router = createBrowserRouter([
       { path: 'episodes', element: <AdminEpisodesPage /> },
       { path: 'rewards', element: <AdminRewardsPage /> },
       { path: 'rooms', element: <AdminRoomsPage /> },
+      { path: 'email-test', element: <EmailTestPage /> },
       { path: 'reports', element: <PlaceholderPage title="รายงาน" /> },
     ],
   },

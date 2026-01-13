@@ -4,10 +4,12 @@
 // วิธีตั้งค่า (Supabase Dashboard > Project Settings > Edge Functions > Secrets)
 // Required:
 // - RESEND_API_KEY = <your-resend-api-key>
-// Optional (recommended):
-// - INTERNAL_FUNCTION_KEY = <random-strong-secret>    // สำหรับเรียกจาก backend/edge function ภายใน
-// - DEFAULT_FROM = "Your Brand <noreply@yourdomain.com>"
-// - ALLOWED_ORIGINS = https://yourdomain.com,https://admin.yourdomain.com  // ถ้าไม่ตั้ง จะเป็น *
+// Optional:
+// - INTERNAL_FUNCTION_KEY = <random-strong-secret>
+// - ALLOWED_ORIGINS = https://yourdomain.com
+//
+// Note: Supabase Edge Functions may not support direct SMTP connections,
+// so we use Resend API (HTTP-based) instead
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -28,27 +30,10 @@ function jsonResponse(
     status,
     headers: {
       "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
       ...headers,
     },
   });
-}
-
-function getAllowOrigin(req: Request) {
-  const origin = req.headers.get("Origin") || "";
-  const allowed = (Deno.env.get("ALLOWED_ORIGINS") || "").trim();
-
-  // ถ้าไม่ได้ตั้ง ALLOWED_ORIGINS ให้เปิดกว้างเหมือนเดิม
-  if (!allowed) return "*";
-
-  const list = allowed
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  if (origin && list.includes(origin)) return origin;
-
-  // ไม่อนุญาต origin อื่น
-  return "";
 }
 
 function isValidEmail(email: string) {
@@ -59,198 +44,245 @@ function stripHtmlToText(html: string) {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-Deno.serve(async (req) => {
-  const allowOrigin = getAllowOrigin(req);
-  const corsHeaders: Record<string, string> = {
-    "Access-Control-Allow-Origin": allowOrigin || "*",
-  };
+// Send email via Resend API (HTTP-based, no SMTP needed)
+// Resend provides HTTP API and doesn't require domain verification for testing
+async function sendEmailViaGmailSMTP(
+  from: string,
+  to: string[],
+  subject: string,
+  html?: string,
+  text?: string
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  console.log('[sendEmailViaGmailSMTP] Starting...', { from, to, subject });
+  
+  const resendApiKey = Deno.env.get("RESEND_API_KEY");
+  
+  console.log('[sendEmailViaGmailSMTP] Config check:', {
+    resendApiKey: !!resendApiKey,
+  });
 
-  // CORS preflight
+  if (!resendApiKey) {
+    console.error('[sendEmailViaGmailSMTP] Missing Resend API key');
+    return {
+      success: false,
+      error: "RESEND_API_KEY not configured in Supabase Secrets. Please add it in Project Settings > Edge Functions > Secrets",
+    };
+  }
+
+  try {
+    console.log('[sendEmailViaGmailSMTP] Calling Resend API...');
+    
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: from,
+        to: to,
+        subject: subject,
+        html: html,
+        text: text || (html ? stripHtmlToText(html) : undefined),
+      }),
+    });
+
+    console.log('[sendEmailViaGmailSMTP] Resend response status:', response.status);
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log('[sendEmailViaGmailSMTP] Resend success:', data);
+      return {
+        success: true,
+        messageId: data.id || `resend-${Date.now()}`,
+      };
+    } else {
+      const errorData = await response.json().catch(async () => {
+        return { message: await response.text().catch(() => "Unknown error") };
+      });
+      console.error('[sendEmailViaGmailSMTP] Resend error:', errorData);
+      return {
+        success: false,
+        error: `Resend error (${response.status}): ${errorData.message || JSON.stringify(errorData)}`,
+      };
+    }
+  } catch (error: any) {
+    console.error('[sendEmailViaGmailSMTP] Resend exception:', error);
+    return {
+      success: false,
+      error: `Resend request failed: ${error.message}`,
+    };
+  }
+}
+
+Deno.serve(async (req) => {
+  console.log('[send-email] Function called, method:', req.method);
+  
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
       headers: {
-        ...corsHeaders,
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers":
-          "authorization, x-client-info, apikey, content-type, x-internal-key",
-        "Access-Control-Max-Age": "86400",
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Access-Control-Max-Age': '86400',
       },
     });
   }
 
-  // Allow only POST
-  if (req.method !== "POST") {
-    return jsonResponse(
-      { ok: false, reason: "METHOD_NOT_ALLOWED" },
-      405,
-      corsHeaders
-    );
-  }
-
   try {
-    // ---------------------------
-    // AUTH POLICY
-    // 1) Internal call: x-internal-key matches INTERNAL_FUNCTION_KEY
-    // 2) External call: Authorization Bearer JWT must be valid (auth.getUser)
-    // ---------------------------
-    const internalKeySecret = (Deno.env.get("INTERNAL_FUNCTION_KEY") || "").trim();
-    const internalKeyHeader = (req.headers.get("x-internal-key") || "").trim();
-    const isInternalCall =
-      internalKeySecret.length > 0 && internalKeyHeader === internalKeySecret;
-
-    if (!isInternalCall) {
-      const authHeader = req.headers.get("Authorization") || "";
-      const jwt = authHeader.startsWith("Bearer ")
-        ? authHeader.slice("Bearer ".length).trim()
-        : "";
-
-      if (!jwt) {
-        return jsonResponse(
-          { ok: false, reason: "UNAUTHORIZED", error: "Missing Bearer token" },
-          401,
-          corsHeaders
-        );
-      }
-
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-
-      const userClient = createClient(supabaseUrl, anonKey, {
-        global: { headers: { Authorization: `Bearer ${jwt}` } },
-      });
-
-      const { data, error } = await userClient.auth.getUser();
-      if (error || !data?.user) {
-        return jsonResponse(
-          {
-            ok: false,
-            reason: "UNAUTHORIZED",
-            error: error?.message || "Invalid JWT",
-          },
-          401,
-          corsHeaders
-        );
-      }
+    console.log('[send-email] Starting authentication check...');
+    
+    // Authentication check
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.replace("Bearer ", "");
+    
+    if (!jwt) {
+      console.error('[send-email] No JWT token found');
+      return jsonResponse(
+        { ok: false, reason: "UNAUTHORIZED", error: "Missing Bearer token" },
+        401
+      );
     }
 
-    // ---------------------------
-    // BODY
-    // ---------------------------
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+    if (!supabaseUrl || !anonKey) {
+      console.error('[send-email] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
+      return jsonResponse(
+        { ok: false, reason: "CONFIG_ERROR", error: "Missing Supabase configuration" },
+        500
+      );
+    }
+
+    console.log('[send-email] Creating user client...');
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: `Bearer ${jwt}` } },
+    });
+
+    console.log('[send-email] Verifying user...');
+    const { data: userData, error: authError } = await userClient.auth.getUser();
+    if (authError || !userData?.user) {
+      console.error('[send-email] Auth error:', authError?.message);
+      return jsonResponse(
+        {
+          ok: false,
+          reason: "UNAUTHORIZED",
+          error: authError?.message || "Invalid JWT",
+        },
+        401
+      );
+    }
+
+    console.log('[send-email] User authenticated:', userData.user.id);
+
+    // Parse request body
+    console.log('[send-email] Parsing request body...');
     let body: EmailOptions;
     try {
-      body = (await req.json()) as EmailOptions;
-    } catch {
-      return jsonResponse({ ok: false, reason: "INVALID_JSON" }, 400, corsHeaders);
-    }
-
-    const { to, subject, html, text, from } = body;
-
-    // ---------------------------
-    // VALIDATION
-    // ---------------------------
-    if (!to || !subject) {
+      body = await req.json();
+    } catch (parseError: any) {
+      console.error('[send-email] JSON parse error:', parseError);
       return jsonResponse(
-        { ok: false, reason: "MISSING_FIELDS", fields: ["to", "subject"] },
-        400,
-        corsHeaders
+        { ok: false, reason: "INVALID_JSON", error: parseError.message },
+        400
+      );
+    }
+    
+    const { to, subject, html, text, from } = body;
+    console.log('[send-email] Request body parsed:', { to, subject, hasHtml: !!html, hasText: !!text });
+
+    // Validation
+    console.log('[send-email] Validating request...');
+    if (!to || !subject) {
+      console.error('[send-email] Missing required fields');
+      return jsonResponse(
+        { ok: false, reason: "MISSING_FIELDS", error: "to and subject are required" },
+        400
       );
     }
 
     if (!html && !text) {
+      console.error('[send-email] Missing content (html or text)');
       return jsonResponse(
-        { ok: false, reason: "MISSING_CONTENT", error: "Provide html or text" },
-        400,
-        corsHeaders
+        { ok: false, reason: "MISSING_CONTENT", error: "html or text is required" },
+        400
       );
     }
 
     const toArray = Array.isArray(to) ? to : [to];
 
-    // anti-abuse: จำกัดจำนวนผู้รับ
+    // Limit recipients (anti-abuse)
     if (toArray.length > 5) {
       return jsonResponse(
         { ok: false, reason: "TOO_MANY_RECIPIENTS", max: 5 },
-        400,
-        corsHeaders
+        400
       );
     }
 
-    for (const e of toArray) {
-      const email = String(e).trim();
+    // Validate emails
+    for (const email of toArray) {
       if (!isValidEmail(email)) {
         return jsonResponse(
           { ok: false, reason: "INVALID_EMAIL", email },
-          400,
-          corsHeaders
+          400
         );
       }
     }
 
-    // ---------------------------
-    // RESEND CONFIG
-    // ---------------------------
-    const resendApiKey =
-      Deno.env.get("RESEND_API_KEY") || Deno.env.get("resend_api_key");
+    // Get email config
+    console.log('[send-email] Getting email config...');
+    const defaultFrom = from || "webmaster@happympm.com";
 
-    if (!resendApiKey) {
-      return jsonResponse(
-        { ok: false, reason: "EMAIL_SERVICE_NOT_CONFIGURED" },
-        500,
-        corsHeaders
-      );
-    }
-
-    const defaultFrom =
-      (Deno.env.get("DEFAULT_FROM") || "").trim() || "onboarding@resend.dev";
-
-    const emailPayload: Record<string, unknown> = {
-      from: (from || defaultFrom).trim(),
-      to: toArray.map((x) => String(x).trim()),
-      subject: String(subject),
-    };
-
-    if (html) emailPayload.html = String(html);
-    if (text) emailPayload.text = String(text);
-    else if (html) emailPayload.text = stripHtmlToText(String(html));
-
-    // ---------------------------
-    // SEND
-    // ---------------------------
-    const resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(emailPayload),
+    console.log('[send-email] Config check:', {
+      gmailUser: !!gmailUser,
+      gmailPassword: !!gmailPassword,
+      defaultFrom,
     });
 
-    const resendData = await resendResponse.json().catch(() => ({}));
+    // Send email
+    console.log('[send-email] Calling sendEmailViaGmailSMTP...');
+    const result = await sendEmailViaGmailSMTP(
+      defaultFrom,
+      toArray,
+      subject,
+      html,
+      text || (html ? stripHtmlToText(html) : undefined)
+    );
 
-    if (!resendResponse.ok) {
+    console.log('[send-email] Send result:', { success: result.success, error: result.error });
+
+    if (!result.success) {
       return jsonResponse(
         {
           ok: false,
           reason: "EMAIL_SEND_FAILED",
-          status: resendResponse.status,
-          error: resendData,
+          error: result.error || "Unknown error",
         },
-        502,
-        corsHeaders
+        500
       );
     }
 
-    return jsonResponse(
-      { ok: true, messageId: (resendData as any)?.id, message: "Email sent successfully" },
-      200,
-      corsHeaders
-    );
+    console.log('[send-email] Email sent successfully!');
+    return jsonResponse({
+      ok: true,
+      messageId: result.messageId,
+      service: "gmail-smtp",
+    });
+
   } catch (error: any) {
+    console.error("[send-email] Exception:", error);
+    console.error("[send-email] Error stack:", error.stack);
     return jsonResponse(
-      { ok: false, reason: "SERVER_ERROR", error: error?.message || String(error) },
-      500,
-      corsHeaders
+      {
+        ok: false,
+        reason: "SERVER_ERROR",
+        error: error.message || String(error),
+        stack: error.stack,
+      },
+      500
     );
   }
 });

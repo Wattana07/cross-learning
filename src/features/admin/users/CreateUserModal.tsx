@@ -70,10 +70,6 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
     setLoading(true)
 
     try {
-      // Call Edge Function to create user
-      // Send Resend API Key from frontend (stored in .env or can be configured)
-      const resendApiKey = import.meta.env.VITE_RESEND_API_KEY || 're_DyUTxyKC_8xhyAqT9iamjtqAqbc2k5W5K';
-      
       // Get production site URL (for redirect link in email)
       // Use Vercel URL as default
       let siteUrl = 'https://cross-learning.vercel.app';
@@ -95,13 +91,14 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
       
       console.log('Using siteUrl for email redirect:', siteUrl);
       
+      // Edge Function จะใช้ RESEND_API_KEY จาก Supabase Secrets โดยอัตโนมัติ
+      // ไม่ต้องส่ง API key จาก frontend เพื่อความปลอดภัย
       const { data, error: fnError } = await supabase.functions.invoke('create-user', {
         body: {
           email: formData.email,
           fullName: formData.fullName,
           department: formData.department || null,
           role: formData.role,
-          resendApiKey: resendApiKey, // Send API Key from frontend
           siteUrl: siteUrl, // Send production URL for email links
         },
       })
@@ -126,8 +123,25 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
         console.warn('User created with warning:', data.warning);
         if (data.emailError) {
           console.error('Email error:', data.emailError);
-          // Show warning toast
-          showError(`ผู้ใช้ถูกสร้างแล้ว แต่ส่งอีเมลไม่สำเร็จ: ${data.emailError}. กรุณาตรวจสอบ Logs หรือตั้งรหัสผ่านให้ผู้ใช้เอง`)
+          console.error('Suggestion:', data.suggestion);
+          
+          // Check if it's a domain/verification error
+          const isVerificationError = data.emailError?.includes('403') || 
+                                     data.emailError?.includes('testing emails') ||
+                                     data.emailError?.includes('verify');
+          
+          if (isVerificationError) {
+            showError(
+              `ผู้ใช้ถูกสร้างแล้ว แต่ส่งอีเมลไม่สำเร็จ\n\n` +
+              `สาเหตุ: ${data.emailError}\n\n` +
+              `💡 วิธีแก้:\n` +
+              `1. ไปที่ Resend Dashboard (https://resend.com/emails) และ verify email: ${formData.email}\n` +
+              `2. หรือ verify domain ใน Resend เพื่อส่งไปยัง email ใดๆ ได้\n\n` +
+              `กรุณาตั้งรหัสผ่านให้ผู้ใช้เองชั่วคราว`
+            )
+          } else {
+            showError(`ผู้ใช้ถูกสร้างแล้ว แต่ส่งอีเมลไม่สำเร็จ: ${data.emailError}. กรุณาตรวจสอบ Logs หรือตั้งรหัสผ่านให้ผู้ใช้เอง`)
+          }
         } else {
           showError(`ผู้ใช้ถูกสร้างแล้ว แต่ส่งอีเมลไม่สำเร็จ. กรุณาตรวจสอบ Logs`)
         }
@@ -147,8 +161,8 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
         }
       }
 
-      // Success
-      success(`สร้างผู้ใช้สำเร็จ! อีเมลตั้งรหัสผ่านถูกส่งไปยัง ${formData.email} แล้ว`)
+      // Success (email sending is now disabled)
+      success(`สร้างผู้ใช้สำเร็จ! (ระบบแจ้งเตือนอีเมลถูกปิดใช้งาน)`)
       setFormData({
         email: '',
         fullName: '',

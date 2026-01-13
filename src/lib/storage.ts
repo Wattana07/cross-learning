@@ -81,9 +81,12 @@ export async function getAvatarUrl(avatarPath: string | null): Promise<string | 
       if (
         error.message.includes('Bucket not found') ||
         error.message.includes('not found') ||
-        error.message.includes('Failed to fetch')
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('Object not found') ||
+        error.statusCode === 400 ||
+        error.statusCode === 404
       ) {
-        console.warn('Avatar not available:', error.message)
+        // Silently return null - avatar not available is OK
         return null
       }
       console.error('Error creating signed URL:', error)

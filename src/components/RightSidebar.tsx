@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthContext } from '@/contexts/AuthContext'
@@ -8,6 +8,8 @@ import { Edit, Calendar, ChevronLeft, ChevronRight, Mail, Trophy } from 'lucide-
 import { cn, formatPoints } from '@/lib/utils'
 import { getMyWallet } from '@/lib/auth'
 import { supabase } from '@/lib/supabaseClient'
+import { fetchMyBookings } from '@/features/rooms/api'
+import type { RoomBooking } from '@/lib/database.types'
 
 // Calculate overall learning progress (same as ProfilePage)
 async function getOverallProgress(userId: string): Promise<{ progressPercent: number; completedEpisodes: number; totalEpisodes: number }> {
@@ -89,12 +91,23 @@ export const RightSidebar = React.memo(function RightSidebar() {
   const progressPercent = overallProgress?.progressPercent ?? 0
   const totalPoints = wallet?.total_points ?? 0
 
+  // Fetch user's bookings
+  const { data: bookings = [], isLoading: bookingsLoading } = useQuery({
+    queryKey: ['sidebar', 'bookings', user?.id],
+    queryFn: () => fetchMyBookings(),
+    enabled: !!user,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+    refetchOnMount: false,
+    retry: 1,
+  })
+
   // Get days in month
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const today = new Date()
+  today.setHours(0, 0, 0, 0)
 
   const monthNames = [
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -119,6 +132,45 @@ export const RightSidebar = React.memo(function RightSidebar() {
     )
   }
 
+  // Filter approved bookings for current month (for schedule display)
+  const currentMonthScheduleBookings = useMemo(() => {
+    if (!bookings || bookings.length === 0) return []
+    
+    return bookings
+      .filter((booking: RoomBooking) => {
+        const startDate = new Date(booking.start_at)
+        return (
+          booking.status === 'approved' &&
+          startDate.getFullYear() === year &&
+          startDate.getMonth() === month
+        )
+      })
+      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      .slice(0, 5) // Show max 5 bookings for current month
+  }, [bookings, year, month])
+
+
+  // Get notifications (approved bookings within next 7 days)
+  const notifications = useMemo(() => {
+    if (!bookings || bookings.length === 0) return []
+    
+    const sevenDaysFromNow = new Date(today)
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+    
+    return bookings
+      .filter((booking: RoomBooking) => {
+        const startDate = new Date(booking.start_at)
+        startDate.setHours(0, 0, 0, 0)
+        return (
+          booking.status === 'approved' &&
+          startDate >= today &&
+          startDate <= sevenDaysFromNow
+        )
+      })
+      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      .slice(0, 5) // Show max 5 notifications
+  }, [bookings, today])
+
   // Generate calendar days
   const calendarDays = []
   // Empty cells for days before month starts
@@ -128,6 +180,22 @@ export const RightSidebar = React.memo(function RightSidebar() {
   // Days of the month
   for (let day = 1; day <= daysInMonth; day++) {
     calendarDays.push(day)
+  }
+
+  // Helper function to format date in Thai
+  const formatThaiDate = (date: Date) => {
+    const thaiMonths = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+    ]
+    const thaiDays = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
+    
+    const day = date.getDate()
+    const month = thaiMonths[date.getMonth()]
+    const year = date.getFullYear() + 543 // Convert to Buddhist year
+    const dayName = thaiDays[date.getDay()]
+    
+    return `${day} ${month} ${year}, วัน${dayName}`
   }
 
   return (
@@ -220,9 +288,12 @@ export const RightSidebar = React.memo(function RightSidebar() {
       <Card variant="bordered" className="p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">ตารางเวลา</h3>
-          <button className="text-sm text-primary-600 hover:text-primary-700 font-medium">
+          <Link
+            to="/rooms"
+            className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+          >
             ดูทั้งหมด
-          </button>
+          </Link>
         </div>
 
         {/* Calendar */}
@@ -276,20 +347,42 @@ export const RightSidebar = React.memo(function RightSidebar() {
 
         {/* Schedule Items */}
         <div className="space-y-3">
-          <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-            <div className="text-sm font-medium text-gray-900">25 {monthNames[month]}</div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-gray-900">12:00</div>
-              <div className="text-xs text-gray-500">วิชา: การวาดภาพ</div>
+          {bookingsLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Spinner size="sm" />
             </div>
-          </div>
-          <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-            <div className="text-sm font-medium text-gray-900">28 {monthNames[month]}</div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-gray-900">14:30</div>
-              <div className="text-xs text-gray-500">วิชา: ประวัติศาสตร์ศิลปะ</div>
+          ) : currentMonthScheduleBookings.length === 0 ? (
+            <div className="text-center py-4 text-sm text-gray-500">
+              ไม่มีการจองในเดือนนี้
             </div>
-          </div>
+          ) : (
+            currentMonthScheduleBookings.map((booking: RoomBooking) => {
+              const startDate = new Date(booking.start_at)
+              const day = startDate.getDate()
+              const time = startDate.toLocaleTimeString('th-TH', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+              
+              return (
+                <div
+                  key={booking.id}
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                  onClick={() => window.location.href = '/rooms'}
+                >
+                  <div className="text-sm font-medium text-gray-900">
+                    {day} {monthNames[month]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900">{time}</div>
+                    <div className="text-xs text-gray-500 truncate" title={booking.title}>
+                      {booking.title}
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
         </div>
       </Card>
 
@@ -297,15 +390,37 @@ export const RightSidebar = React.memo(function RightSidebar() {
       <Card variant="bordered" className="p-5">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">การแจ้งเตือน</h3>
         <div className="space-y-3">
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-primary-50 border border-primary-100">
-            <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center flex-shrink-0">
-              <Mail className="w-5 h-5 text-primary-600" />
+          {bookingsLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Spinner size="sm" />
             </div>
-            <div className="flex-1 min-w-0">
-              <h4 className="font-medium text-gray-900 mb-1">ส่งงาน - ทดสอบ</h4>
-              <p className="text-xs text-gray-500">18 มิ.ย. 2024, วันศุกร์</p>
+          ) : notifications.length === 0 ? (
+            <div className="text-center py-4 text-sm text-gray-500">
+              ไม่มีการแจ้งเตือน
             </div>
-          </div>
+          ) : (
+            notifications.map((booking: RoomBooking) => {
+              const startDate = new Date(booking.start_at)
+              const dateStr = formatThaiDate(startDate)
+              
+              return (
+                <div
+                  key={booking.id}
+                  className="flex items-start gap-3 p-3 rounded-lg bg-primary-50 border border-primary-100 hover:bg-primary-100 transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center flex-shrink-0">
+                    <Calendar className="w-5 h-5 text-primary-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-gray-900 mb-1 truncate" title={booking.title}>
+                      {booking.title}
+                    </h4>
+                    <p className="text-xs text-gray-500">{dateStr}</p>
+                  </div>
+                </div>
+              )
+            })
+          )}
         </div>
       </Card>
     </aside>

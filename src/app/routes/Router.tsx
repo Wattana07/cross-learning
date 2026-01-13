@@ -88,7 +88,6 @@ const router = createBrowserRouter([
       { path: 'episodes', element: <AdminEpisodesPage /> },
       { path: 'rewards', element: <AdminRewardsPage /> },
       { path: 'rooms', element: <AdminRoomsPage /> },
-      { path: 'email-test', element: <EmailTestPage /> },
       { path: 'reports', element: <PlaceholderPage title="รายงาน" /> },
     ],
   },

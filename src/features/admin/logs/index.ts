@@ -1,0 +1,2 @@
+export { AdminLogsPage } from './AdminLogsPage'
+

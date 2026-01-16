@@ -1,6 +1,7 @@
 # Logs
-logs
 *.log
+/logs
+!src/features/admin/logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

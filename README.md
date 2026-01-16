@@ -75,6 +75,18 @@ npm run dev
 
 เปิด http://localhost:5173
 
+### 7. Build for Production
+
+```bash
+# Build
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+ดูคำแนะนำเพิ่มเติมใน `BUILD.md`
+
 ## 📁 Project Structure
 
 ```

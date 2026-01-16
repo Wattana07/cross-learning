@@ -1,0 +1,2 @@
+export { AdminRoomsPage } from './AdminRoomsPage'
+

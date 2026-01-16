@@ -1,0 +1,2 @@
+export { AdminRewardsPage } from './AdminRewardsPage'
+

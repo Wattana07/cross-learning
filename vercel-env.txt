@@ -1,0 +1,5 @@
+VITE_SUPABASE_URL=https://wmfuzaahfdknfjvqwwsi.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_vp4vBczL_eTBDNU12pD7Iw_5aFX_ylZ
+VITE_RESEND_API_KEY=re_DyUTxyKC_8xhyAqT9iamjtqAqbc2k5W5K
+VITE_SITE_URL=https://crosslearning.com
+

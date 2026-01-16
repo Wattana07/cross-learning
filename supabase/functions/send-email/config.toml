@@ -1,0 +1,5 @@
+[function]
+# Disable JWT verification at API Gateway level
+# We handle authentication manually in the function code
+verify_jwt = false
+

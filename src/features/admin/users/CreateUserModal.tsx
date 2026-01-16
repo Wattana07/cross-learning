@@ -432,9 +432,9 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
               เสร็จสิ้น
             </Button>
           ) : (
-            <Button type="submit" loading={loading}>
-              สร้างผู้ใช้
-            </Button>
+          <Button type="submit" loading={loading}>
+            สร้างผู้ใช้
+          </Button>
           )}
         </ModalFooter>
       </form>

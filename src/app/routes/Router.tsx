@@ -6,6 +6,8 @@ import { RequireAdmin } from '@/app/guards/RequireAdmin'
 
 // Auth
 import { LoginPage } from '@/features/auth/LoginPage'
+import { ForgotPasswordPage } from '@/features/auth/ForgotPasswordPage'
+import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage'
 
 // Learner pages
 import { DashboardPage } from '@/features/learning/pages/DashboardPage'
@@ -16,6 +18,8 @@ import { EpisodePlayerPage } from '@/features/learning/pages/EpisodePlayerPage'
 import { RewardsPage } from '@/features/rewards/RewardsPage'
 import { RoomsPage } from '@/features/rooms/RoomsPage'
 import { ProfilePage } from '@/features/profile/ProfilePage'
+import { SettingsPage } from '@/features/settings'
+import { ActivityFeedPage } from '@/features/activity'
 
 // Admin pages
 import { AdminDashboard } from '@/features/admin/dashboard/AdminDashboard'
@@ -48,6 +52,14 @@ const router = createBrowserRouter([
     path: '/login',
     element: <LoginPage />,
   },
+  {
+    path: '/forgot-password',
+    element: <ForgotPasswordPage />,
+  },
+  {
+    path: '/reset-password',
+    element: <ResetPasswordPage />,
+  },
 
   // Protected learner routes
   {
@@ -67,7 +79,8 @@ const router = createBrowserRouter([
       { path: 'online-courses', element: <PlaceholderPage title="คอร์สออนไลน์" /> },
       { path: 'assignments', element: <PlaceholderPage title="งานที่ได้รับมอบหมาย" /> },
       { path: 'payment', element: <PlaceholderPage title="การชำระเงิน" /> },
-      { path: 'settings', element: <PlaceholderPage title="ตั้งค่า" /> },
+      { path: 'settings', element: <SettingsPage /> },
+      { path: 'activity', element: <ActivityFeedPage /> },
       { path: 'rewards', element: <RewardsPage /> },
       { path: 'rooms', element: <RoomsPage /> },
       { path: 'profile', element: <ProfilePage /> },

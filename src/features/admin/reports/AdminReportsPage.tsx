@@ -22,6 +22,7 @@ import {
   type PointsReport,
 } from './api'
 import { formatDate } from '@/lib/utils'
+import { exportToCSV, exportToExcel, exportToPDF, formatDateForExport, formatDateTimeForExport } from '@/lib/export-utils'
 
 type TabType = 'users' | 'learning' | 'bookings' | 'points'
 
@@ -77,13 +78,31 @@ export function AdminReportsPage() {
           <h1 className="text-2xl font-bold text-gray-900">รายงาน</h1>
           <p className="text-gray-500 mt-1">ดูสถิติและรายงานต่างๆ ของระบบ</p>
         </div>
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          leftIcon={<RefreshCw className="w-4 h-4" />}
-        >
-          รีเฟรชข้อมูล
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              const reportId = `report-${activeTab}`
+              const titles: Record<TabType, string> = {
+                users: 'รายงานผู้ใช้',
+                learning: 'รายงานการเรียน',
+                bookings: 'รายงานการจองห้อง',
+                points: 'รายงานแต้ม',
+              }
+              exportToPDF(reportId, `รายงาน-${titles[activeTab]}`, titles[activeTab])
+            }}
+            leftIcon={<Download className="w-4 h-4" />}
+          >
+            Export PDF
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            leftIcon={<RefreshCw className="w-4 h-4" />}
+          >
+            รีเฟรชข้อมูล
+          </Button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -117,7 +136,24 @@ export function AdminReportsPage() {
         </div>
       ) : (
         <div>
-          {activeTab === 'users' && userReport && <UserReportsView report={userReport} />}
+          {activeTab === 'users' && userReport && (
+            <UserReportsView report={userReport} onExportCSV={() => {
+              const csvData = [
+                { 'รายการ': 'ผู้ใช้ทั้งหมด', 'จำนวน': userReport.totalUsers },
+                { 'รายการ': 'ผู้ใช้ที่ใช้งาน', 'จำนวน': userReport.activeUsers },
+                { 'รายการ': 'ผู้ใช้ที่ไม่ได้ใช้งาน', 'จำนวน': userReport.inactiveUsers },
+                { 'รายการ': 'ผู้เรียน', 'จำนวน': userReport.learners },
+                { 'รายการ': 'ผู้ดูแลระบบ', 'จำนวน': userReport.admins },
+                { 'รายการ': 'ผู้ใช้ใหม่สัปดาห์นี้', 'จำนวน': userReport.newUsersThisWeek },
+                { 'รายการ': 'ผู้ใช้ใหม่เดือนนี้', 'จำนวน': userReport.newUsersThisMonth },
+                ...userReport.usersByDepartment.map(dept => ({
+                  'รายการ': `แผนก: ${dept.department}`,
+                  'จำนวน': dept.count,
+                })),
+              ]
+              exportToCSV(csvData, `รายงานผู้ใช้-${formatDateForExport(new Date())}`)
+            }} />
+          )}
           {activeTab === 'learning' && learningReport && (
             <LearningReportsView report={learningReport} />
           )}
@@ -132,9 +168,16 @@ export function AdminReportsPage() {
 }
 
 // User Reports View
-function UserReportsView({ report }: { report: UserReport }) {
+function UserReportsView({ report, onExportCSV }: { report: UserReport; onExportCSV?: () => void }) {
   return (
-    <div className="space-y-6">
+    <div id="report-users" className="space-y-6">
+      {onExportCSV && (
+        <div className="flex justify-end mb-4">
+          <Button variant="outline" onClick={onExportCSV} leftIcon={<Download className="w-4 h-4" />}>
+            Export CSV
+          </Button>
+        </div>
+      )}
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card variant="bordered" className="p-6">
@@ -225,7 +268,7 @@ function UserReportsView({ report }: { report: UserReport }) {
 // Learning Reports View
 function LearningReportsView({ report }: { report: LearningReport }) {
   return (
-    <div className="space-y-6">
+    <div id="report-learning" className="space-y-6">
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card variant="bordered" className="p-6">
@@ -321,7 +364,7 @@ function BookingReportsView({ report }: { report: BookingReport }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="report-bookings" className="space-y-6">
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card variant="bordered" className="p-6">
@@ -428,7 +471,7 @@ function BookingReportsView({ report }: { report: BookingReport }) {
 // Points Reports View
 function PointsReportsView({ report }: { report: PointsReport }) {
   return (
-    <div className="space-y-6">
+    <div id="report-points" className="space-y-6">
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card variant="bordered" className="p-6">

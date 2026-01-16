@@ -1,0 +1,2 @@
+export { ActivityFeedPage } from './ActivityFeedPage'
+

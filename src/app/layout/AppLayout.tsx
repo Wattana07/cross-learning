@@ -14,6 +14,7 @@ import {
   Menu,
   Settings,
   DoorOpen,
+  Activity,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -26,6 +27,7 @@ const navigation: Array<{
   { name: 'แดชบอร์ด', href: '/', icon: Home },
   { name: 'คอร์สของฉัน', href: '/categories', icon: FolderOpen },
   { name: 'จองห้องประชุม', href: '/rooms', icon: Calendar },
+  { name: 'Activity Feed', href: '/activity', icon: Activity },
 ]
 
 export function AppLayout() {

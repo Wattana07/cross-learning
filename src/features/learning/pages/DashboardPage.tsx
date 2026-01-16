@@ -96,12 +96,18 @@ export function DashboardPage() {
     refetchOnMount: false, // Don't refetch on mount if data is fresh
   })
 
-  // Load cover URLs using React Query
+  // Get all subjects from categories (use this for all tabs to ensure consistency)
+  const allSubjectsFromCategories = useMemo(
+    () => categoriesWithSubjects.flatMap((c) => c.subjects),
+    [categoriesWithSubjects]
+  )
+
+  // Load cover URLs using React Query - use allSubjectsFromCategories instead of subjects array
   const { data: subjectCoverUrls = {}, isLoading: coversLoading } = useQuery({
-    queryKey: ['dashboard', 'subject-covers', subjects.map(s => s.id).sort().join(',')],
+    queryKey: ['dashboard', 'subject-covers', allSubjectsFromCategories.map(s => s.id).sort().join(',')],
     queryFn: async () => {
       const urls: Record<string, string> = {}
-      for (const subject of subjects) {
+      for (const subject of allSubjectsFromCategories) {
         if (subject.cover_path) {
           try {
             const url = await getSubjectCoverUrl(subject.cover_path)
@@ -113,15 +119,15 @@ export function DashboardPage() {
       }
       return urls
     },
-    enabled: subjects.length > 0,
+    enabled: allSubjectsFromCategories.length > 0,
     staleTime: 1000 * 60 * 15, // 15 minutes (cover URLs are stable)
     refetchOnMount: false, // Don't refetch on mount if data is fresh
   })
 
-  // Get all subject IDs from both subjects array (for active/completed tabs) and categoriesWithSubjects (for all tab)
+  // Get all subject IDs from categories (allSubjectsFromCategories is already defined above)
   const allSubjectIdsFromCategories = useMemo(
-    () => categoriesWithSubjects.flatMap((c) => c.subjects.map((s) => s.id)),
-    [categoriesWithSubjects]
+    () => allSubjectsFromCategories.map((s) => s.id),
+    [allSubjectsFromCategories]
   )
   const subjectIdsFromSubjects = useMemo(() => subjects.map(s => s.id), [subjects])
   
@@ -175,15 +181,25 @@ export function DashboardPage() {
   const currentStreak = streak.current_streak || 0
   const maxStreak = streak.max_streak || 0
 
-  // Filter subjects by tab
-  const filteredSubjects = subjects.filter((subject) => {
-    const progress = subjectProgress[subject.id] || { watched: 0, total: 0 }
-    const percent = progress.total > 0 ? (progress.watched / progress.total) * 100 : 0
+  // Filter subjects by tab - use allSubjectsFromCategories for consistency
+  const filteredSubjects = allSubjectsFromCategories.filter((subject) => {
+    const subjProgress = subjectsProgressMap[subject.id]
+    
+    if (activeTab === 'all') {
+      return true // Show all in "all" tab
+    }
+    
+    if (!subjProgress) {
+      // No progress data - don't show in active/completed tabs
+      return false
+    }
 
     if (activeTab === 'active') {
-      return percent > 0 && percent < 100
+      // Active: has started but not completed
+      return subjProgress.hasStarted && !subjProgress.isCompleted
     } else if (activeTab === 'completed') {
-      return percent === 100
+      // Completed: isCompleted flag is true
+      return subjProgress.isCompleted
     }
     return true
   })

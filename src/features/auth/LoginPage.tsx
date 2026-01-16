@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { Button, Input, Card } from '@/components/ui'
 import { logger } from '@/lib/logger'
@@ -100,9 +100,17 @@ export function LoginPage() {
         </Card>
 
         {/* Footer */}
-        <p className="text-center text-sm text-gray-500 mt-6">
-          หากยังไม่มีบัญชี กรุณาติดต่อผู้ดูแลระบบ
-        </p>
+        <div className="text-center space-y-2 mt-6">
+          <Link
+            to="/forgot-password"
+            className="block text-sm text-primary-600 hover:text-primary-700 font-medium"
+          >
+            ลืมรหัสผ่าน?
+          </Link>
+          <p className="text-sm text-gray-500">
+            หากยังไม่มีบัญชี กรุณาติดต่อผู้ดูแลระบบ
+          </p>
+        </div>
       </div>
     </div>
   )

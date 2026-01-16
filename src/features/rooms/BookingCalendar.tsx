@@ -166,14 +166,14 @@ export function BookingCalendar({
                   setSelectedDate(date)
                 } else {
                   // ถ้าไม่มีกิจกรรม ให้จองห้อง (ถ้าเป็นวันที่อนาคต 7+ วัน)
-                  const today = new Date()
-                  today.setHours(0, 0, 0, 0)
+                const today = new Date()
+                today.setHours(0, 0, 0, 0)
                   const clickedDate = new Date(date)
                   clickedDate.setHours(0, 0, 0, 0)
                   const diffDays = Math.floor((clickedDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-                  
-                  if (diffDays >= 7) {
-                    onBookRoom(date)
+                
+                if (diffDays >= 7) {
+                  onBookRoom(date)
                   }
                 }
               }}

@@ -28,7 +28,8 @@ type ActionFilter = 'all' | 'login' | 'content' | 'booking' | 'learning' | 'poin
 export function ActivityFeedPage() {
   const { user, profile } = useAuthContext()
   const [searchQuery, setSearchQuery] = useState('')
-  const [filterType, setFilterType] = useState<FilterType>('all')
+  // ถ้าไม่ใช่แอดมิน ให้ค่าเริ่มต้นเป็น "ของฉัน" เพื่อดู log ของตัวเอง
+  const [filterType, setFilterType] = useState<FilterType>(() => (profile?.role === 'admin' ? 'all' : 'me'))
   const [actionFilter, setActionFilter] = useState<ActionFilter>('all')
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('week')
 

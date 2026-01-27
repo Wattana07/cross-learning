@@ -24,12 +24,18 @@ alter table public.system_logs enable row level security;
 
 -- Drop existing policies if exist (to avoid duplicate error)
 drop policy if exists "Admins can view all logs" on public.system_logs;
+drop policy if exists "Users can view own logs" on public.system_logs;
 drop policy if exists "Users can insert logs" on public.system_logs;
 
 -- Policy: Only admins can view logs
 create policy "Admins can view all logs" on public.system_logs
   for select
   using (public.is_admin());
+
+-- Policy: Normal users can view only their own logs
+create policy "Users can view own logs" on public.system_logs
+  for select
+  using (auth.uid() = user_id);
 
 -- Policy: Authenticated users can insert logs (for logging their own actions)
 create policy "Users can insert logs" on public.system_logs

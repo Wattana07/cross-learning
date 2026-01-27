@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import type { Profile } from '@/lib/database.types'
 import { cn, formatDate } from '@/lib/utils'
+import { logger } from '@/lib/logger'
 
 export function AdminUsersPage() {
   const { success, error: showError } = useToast()
@@ -283,6 +284,15 @@ export function AdminUsersPage() {
             points_added: points,
             admin_note: 'manual_adjustment',
           } as any,
+        })
+        // 3) Log points award to activity feed
+        await logger.success('points_award', {
+          resourceType: 'user_wallet',
+          resourceId: user.id,
+          details: {
+            points_added: points,
+            source: 'admin_manual_add',
+          },
         })
       } catch (notifyError) {
         // ไม่ต้อง fail ทั้งฟังก์ชัน ถ้าแค่แจ้งเตือนล้มเหลว

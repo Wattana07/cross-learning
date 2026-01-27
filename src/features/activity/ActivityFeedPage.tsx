@@ -120,6 +120,8 @@ export function ActivityFeedPage() {
     const labels: Record<string, string> = {
       login: 'เข้าสู่ระบบ',
       logout: 'ออกจากระบบ',
+      user_login: 'เข้าสู่ระบบ',
+      user_logout: 'ออกจากระบบ',
       category_create: 'สร้างหมวดหมู่',
       category_update: 'แก้ไขหมวดหมู่',
       category_delete: 'ลบหมวดหมู่',
@@ -134,12 +136,15 @@ export function ActivityFeedPage() {
       booking_create: 'จองห้อง',
       booking_update: 'แก้ไขการจอง',
       booking_cancel: 'ยกเลิกการจอง',
+      points_award: 'เพิ่มแต้ม',
+      points_deduct: 'ใช้แต้ม',
     }
     return labels[action] || action
   }
 
   const getActionIcon = (action: string) => {
     if (action.includes('login') || action.includes('logout')) return '🔐'
+    if (action.includes('points_award') || action.includes('points_deduct') || action.includes('points')) return '🏆'
     if (action.includes('create')) return '➕'
     if (action.includes('update')) return '✏️'
     if (action.includes('delete')) return '🗑️'
@@ -495,11 +500,11 @@ export function ActivityFeedPage() {
 function getActionsForCategory(category: ActionFilter): string[] | undefined {
   const categories: Record<ActionFilter, string[]> = {
     all: [],
-    login: ['login', 'logout'],
+    login: ['user_login', 'user_logout'],
     content: ['category_create', 'category_update', 'category_delete', 'subject_create', 'subject_update', 'subject_delete', 'episode_create', 'episode_update', 'episode_delete'],
     learning: ['episode_watch', 'episode_complete'],
     booking: ['booking_create', 'booking_update', 'booking_cancel'],
-    points: ['points_earned', 'points_spent'],
+    points: ['points_award', 'points_deduct'],
   }
 
   return categories[category]?.length > 0 ? categories[category] : undefined

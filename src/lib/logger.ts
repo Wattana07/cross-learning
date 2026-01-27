@@ -30,6 +30,8 @@ export type LogAction =
   | 'room_delete'
   | 'points_award'
   | 'points_deduct'
+  | 'bookmark_add'
+  | 'bookmark_remove'
   | 'system_error'
   | 'api_call'
   | 'file_upload'

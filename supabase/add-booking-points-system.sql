@@ -71,12 +71,12 @@ BEGIN
   INSERT INTO public.user_wallet (user_id, total_points, level)
   VALUES (p_user_id, 0, 1)
   ON CONFLICT (user_id) DO NOTHING;
-
+ 
   -- ตรวจสอบว่าแต้มพอหรือไม่
   SELECT total_points INTO current_points
   FROM public.user_wallet
   WHERE user_id = p_user_id;
-
+ 
   IF current_points < p_points THEN
     RAISE EXCEPTION 'Insufficient points. Required: %, Available: %', p_points, current_points;
   END IF;
@@ -85,15 +85,49 @@ BEGIN
   UPDATE public.user_wallet
   SET total_points = total_points - p_points, updated_at = now()
   WHERE user_id = p_user_id;
-
+ 
   -- คำนวณ level ใหม่
   SELECT total_points INTO new_total
   FROM public.user_wallet
   WHERE user_id = p_user_id;
-
+ 
   UPDATE public.user_wallet
   SET level = GREATEST(1, FLOOR(new_total / 500) + 1)::int, updated_at = now()
   WHERE user_id = p_user_id;
+
+  -- Log การใช้แต้มลง system_logs (ถ้ามีตารางนี้)
+  IF EXISTS (
+    SELECT 1
+    FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename = 'system_logs'
+  ) THEN
+    INSERT INTO public.system_logs (
+      user_id,
+      action,
+      resource_type,
+      resource_id,
+      details,
+      status,
+      error_message,
+      ip_address,
+      user_agent
+    )
+    VALUES (
+      p_user_id,
+      'points_deduct',
+      'user_wallet',
+      p_user_id::text,
+      jsonb_build_object(
+        'points', p_points,
+        'reason', 'room_booking'
+      ),
+      'success',
+      null,
+      null,
+      null
+    );
+  END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

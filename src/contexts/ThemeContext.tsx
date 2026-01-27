@@ -27,7 +27,8 @@ function getStoredTheme(): Theme {
       return stored
     }
   }
-  return 'system'
+  // ค่าเริ่มต้นให้ใช้โหมดสว่างเสมอ (แม้ system จะเป็น dark)
+  return 'light'
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

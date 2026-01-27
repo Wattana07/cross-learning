@@ -1,10 +1,26 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { Card, Spinner, Badge, Button, Input } from '@/components/ui'
-import { Activity, Filter, Search, Calendar, User, RefreshCw } from 'lucide-react'
+import { 
+  Activity, 
+  Filter, 
+  Search, 
+  Calendar, 
+  RefreshCw,
+  BookOpen,
+  Trophy,
+  Clock,
+  Flame,
+  PlayCircle,
+  CheckCircle2,
+  History,
+  TrendingUp,
+} from 'lucide-react'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { fetchLogs } from '@/features/admin/logs/api'
-import { formatDate, formatTime } from '@/lib/utils'
+import { getLearningStats, getRecentlyWatched, getBookmarkedSubjects } from '@/features/learning/api'
+import { formatTime, formatDuration } from '@/lib/utils'
 
 type FilterType = 'all' | 'me' | 'system'
 type ActionFilter = 'all' | 'login' | 'content' | 'booking' | 'learning' | 'points'
@@ -59,6 +75,27 @@ export function ActivityFeedPage() {
 
     return { filters: f, actionFilters }
   }, [filterType, actionFilter, searchQuery, dateRange, user?.id])
+
+  // Fetch learning stats
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['learning-stats'],
+    queryFn: getLearningStats,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  })
+
+  // Fetch recently watched
+  const { data: recentlyWatched = [], isLoading: recentlyLoading } = useQuery({
+    queryKey: ['recently-watched'],
+    queryFn: () => getRecentlyWatched(5),
+    staleTime: 1000 * 60, // 1 minute
+  })
+
+  // Fetch bookmarked subjects
+  const { data: bookmarkedSubjects = [], isLoading: bookmarksLoading } = useQuery({
+    queryKey: ['bookmarked-subjects'],
+    queryFn: getBookmarkedSubjects,
+    staleTime: 1000 * 60 * 5,
+  })
 
   // Fetch logs
   const { data: logsData, isLoading, refetch } = useQuery({
@@ -122,6 +159,169 @@ export function ActivityFeedPage() {
         <Button variant="outline" onClick={() => refetch()} leftIcon={<RefreshCw className="w-4 h-4" />}>
           รีเฟรช
         </Button>
+      </div>
+
+      {/* Learning Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card variant="bordered" padding="md" className="text-center">
+          <div className="p-3 rounded-full bg-primary-100 w-fit mx-auto mb-2">
+            <BookOpen className="w-6 h-6 text-primary-600" />
+          </div>
+          <div className="text-2xl font-bold text-gray-900">
+            {statsLoading ? '-' : stats?.totalEpisodesWatched || 0}
+          </div>
+          <div className="text-sm text-gray-500">บทเรียนที่ดู</div>
+        </Card>
+
+        <Card variant="bordered" padding="md" className="text-center">
+          <div className="p-3 rounded-full bg-green-100 w-fit mx-auto mb-2">
+            <CheckCircle2 className="w-6 h-6 text-green-600" />
+          </div>
+          <div className="text-2xl font-bold text-gray-900">
+            {statsLoading ? '-' : stats?.totalEpisodesCompleted || 0}
+          </div>
+          <div className="text-sm text-gray-500">บทเรียนที่จบ</div>
+        </Card>
+
+        <Card variant="bordered" padding="md" className="text-center">
+          <div className="p-3 rounded-full bg-yellow-100 w-fit mx-auto mb-2">
+            <Clock className="w-6 h-6 text-yellow-600" />
+          </div>
+          <div className="text-2xl font-bold text-gray-900">
+            {statsLoading ? '-' : stats?.totalWatchTimeMinutes || 0}
+          </div>
+          <div className="text-sm text-gray-500">นาทีที่เรียน</div>
+        </Card>
+
+        <Card variant="bordered" padding="md" className="text-center">
+          <div className="p-3 rounded-full bg-orange-100 w-fit mx-auto mb-2">
+            <Flame className="w-6 h-6 text-orange-600" />
+          </div>
+          <div className="text-2xl font-bold text-gray-900">
+            {statsLoading ? '-' : stats?.currentStreak || 0}
+          </div>
+          <div className="text-sm text-gray-500">วันต่อเนื่อง</div>
+        </Card>
+      </div>
+
+      {/* Recently Watched */}
+      <Card variant="bordered" padding="md">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <History className="w-5 h-5 text-primary-600" />
+            เรียนล่าสุด
+          </h2>
+          <Link to="/categories" className="text-sm text-primary-600 hover:text-primary-700">
+            ดูทั้งหมด →
+          </Link>
+        </div>
+        
+        {recentlyLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Spinner size="md" />
+          </div>
+        ) : recentlyWatched.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <PlayCircle className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+            <p>ยังไม่มีประวัติการเรียน</p>
+            <Link to="/categories" className="text-primary-600 hover:underline mt-2 inline-block">
+              เริ่มเรียนเลย →
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {recentlyWatched.map((item) => (
+              <Link
+                key={item.episode.id}
+                to={`/subjects/${item.subject.id}/episodes/${item.episode.id}`}
+                className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex-shrink-0">
+                  {item.progress.completed_at ? (
+                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                      <CheckCircle2 className="w-5 h-5 text-green-600" />
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+                      <PlayCircle className="w-5 h-5 text-primary-600" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-gray-900 truncate">{item.episode.title}</h3>
+                  <p className="text-sm text-gray-500 truncate">{item.subject.title}</p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-sm font-medium text-primary-600">
+                    {Math.round(item.progress.watched_percent)}%
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    {item.episode.duration_seconds ? formatDuration(item.episode.duration_seconds) : ''}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Bookmarked Subjects */}
+      <Card variant="bordered" padding="md">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-primary-600" />
+            วิชาที่บันทึกไว้
+          </h2>
+          <Link to="/categories" className="text-sm text-primary-600 hover:text-primary-700">
+            ไปหน้าวิชา →
+          </Link>
+        </div>
+
+        {bookmarksLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Spinner size="md" />
+          </div>
+        ) : bookmarkedSubjects.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>ยังไม่มีวิชาที่บันทึกไว้</p>
+            <p className="text-xs mt-1">กดไอคอนรูปหนังสือที่การ์ดวิชาเพื่อบันทึก</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {bookmarkedSubjects.map((subject) => (
+              <Link
+                key={subject.id}
+                to={`/subjects/${subject.id}`}
+                className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center flex-shrink-0">
+                  <BookOpen className="w-5 h-5 text-primary-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-gray-900 truncate">{subject.title}</h3>
+                  {subject.category_name && (
+                    <p className="text-xs text-gray-500 truncate">{subject.category_name}</p>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs text-gray-400">
+                    บันทึกเมื่อ{' '}
+                    {new Date(subject.bookmarked_at).toLocaleDateString('th-TH', {
+                      day: 'numeric',
+                      month: 'short',
+                    })}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Activity Feed Section */}
+      <div className="flex items-center gap-2 pt-4">
+        <TrendingUp className="w-5 h-5 text-primary-600" />
+        <h2 className="text-lg font-semibold text-gray-900">Activity Feed</h2>
       </div>
 
       {/* Filters */}

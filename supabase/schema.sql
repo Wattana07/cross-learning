@@ -428,6 +428,7 @@ create policy "blocks_admin_delete" on public.room_blocks for delete using (publ
 -- Bookings
 create policy "bookings_select_own" on public.room_bookings for select using (auth.uid() = booked_by_user_id);
 create policy "bookings_select_admin" on public.room_bookings for select using (public.is_admin());
+create policy "bookings_select_all_authenticated" on public.room_bookings for select using (auth.uid() is not null);
 
 -- ============================================
 -- สร้าง Admin User คนแรก

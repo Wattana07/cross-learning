@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Card, Badge, Spinner } from '@/components/ui'
 import {
@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   Clock,
   Trophy,
+  FileText,
+  ListVideo,
 } from 'lucide-react'
 import { useSubject, useEpisodesInSubject, useUserProgress } from '@/hooks/useLearning'
 import { getSubjectProgress } from '../api'
@@ -21,6 +23,7 @@ export function SubjectDetailPage() {
   const { subjectId } = useParams<{ subjectId: string }>()
   const navigate = useNavigate()
   const { user } = useAuthContext()
+  const [activeTab, setActiveTab] = useState<'episodes' | 'details'>('episodes')
 
   const { data: subjectData, isLoading: subjectLoading, error: subjectError } = useSubject(subjectId)
   const { data: episodes = [], isLoading: episodesLoading } = useEpisodesInSubject(subjectId)
@@ -117,9 +120,6 @@ export function SubjectDetailPage() {
             <p className="text-sm text-gray-500 mb-1">{subject.category_name}</p>
           )}
           <h1 className="text-2xl font-bold text-gray-900">{subject.title}</h1>
-          {subject.description && (
-            <p className="text-gray-500 mt-1">{subject.description}</p>
-          )}
         </div>
       </div>
 
@@ -200,107 +200,158 @@ export function SubjectDetailPage() {
         </div>
       </Card>
 
-      {/* Episodes List */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">บทเรียนทั้งหมด ({episodes.length})</h2>
-        
-        {episodes.length === 0 ? (
-          <Card variant="bordered" className="text-center py-12">
-            <PlayCircle className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-500">ยังไม่มีบทเรียนในวิชานี้</p>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {episodes.map((episode, index) => {
-              const status = getEpisodeStatus(episode, index)
-              const locked = status === 'locked'
-              const epProgress = progress[episode.id]
-
-              return (
-                <Link
-                  key={episode.id}
-                  to={locked ? '#' : `/subjects/${subjectId}/episodes/${episode.id}`}
-                  onClick={(e) => {
-                    if (locked) {
-                      e.preventDefault()
-                      alert('กรุณาเรียนบทเรียนก่อนหน้าจบก่อน')
-                    }
-                  }}
-                >
-                  <Card
-                    variant="bordered"
-                    className={`
-                      p-4 transition-all
-                      ${locked 
-                        ? 'opacity-60 cursor-not-allowed' 
-                        : 'hover:shadow-md hover:border-primary-200 cursor-pointer'}
-                    `}
-                  >
-                    <div className="flex items-start gap-4">
-                      {/* Order Number / Status Icon */}
-                      <div className="flex-shrink-0">
-                        {locked ? (
-                          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                            <Lock className="w-5 h-5 text-gray-500" />
-                          </div>
-                        ) : status === 'completed' ? (
-                          <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                            <CheckCircle2 className="w-5 h-5 text-green-600" />
-                          </div>
-                        ) : status === 'in_progress' ? (
-                          <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                            <PlayCircle className="w-5 h-5 text-primary-600" />
-                          </div>
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">
-                            {episode.order_no}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between mb-2">
-                          <h3 className="font-semibold text-gray-900 line-clamp-1">
-                            {episode.title}
-                          </h3>
-                          {episode.points_reward && (
-                            <div className="flex items-center gap-1 text-sm text-yellow-600 ml-2">
-                              <Trophy className="w-4 h-4" />
-                              <span>{episode.points_reward}</span>
-                            </div>
-                          )}
-                        </div>
-                        {episode.description && (
-                          <p className="text-sm text-gray-600 line-clamp-2 mb-2">
-                            {episode.description}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
-                          {episode.duration_seconds && (
-                            <div className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              <span>{formatDuration(episode.duration_seconds)}</span>
-                            </div>
-                          )}
-                          {epProgress && epProgress.watched_percent > 0 && (
-                            <span>
-                              ดูแล้ว {Math.round(epProgress.watched_percent)}%
-                            </span>
-                          )}
-                          {status === 'completed' && (
-                            <Badge variant="success" size="sm">เรียนจบแล้ว</Badge>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              )
-            })}
-          </div>
-        )}
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-4" aria-label="Tabs">
+          <button
+            onClick={() => setActiveTab('episodes')}
+            className={`
+              py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors
+              ${activeTab === 'episodes'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+            `}
+          >
+            <ListVideo className="w-4 h-4" />
+            บทเรียนทั้งหมด ({episodes.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('details')}
+            className={`
+              py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors
+              ${activeTab === 'details'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+            `}
+          >
+            <FileText className="w-4 h-4" />
+            รายละเอียดวิชา
+          </button>
+        </nav>
       </div>
+
+      {/* Tab Content */}
+      {activeTab === 'details' && (
+        <div className="space-y-4">
+          {subject.description ? (
+            <Card variant="bordered" className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary-600" />
+                รายละเอียดวิชา
+              </h3>
+              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
+                {subject.description}
+              </div>
+            </Card>
+          ) : (
+            <Card variant="bordered" className="text-center py-12">
+              <FileText className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+              <p className="text-gray-500">ยังไม่มีรายละเอียดวิชานี้</p>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'episodes' && (
+        <div>
+          {episodes.length === 0 ? (
+            <Card variant="bordered" className="text-center py-12">
+              <PlayCircle className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+              <p className="text-gray-500">ยังไม่มีบทเรียนในวิชานี้</p>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {episodes.map((episode, index) => {
+                const status = getEpisodeStatus(episode, index)
+                const locked = status === 'locked'
+                const epProgress = progress[episode.id]
+
+                return (
+                  <Link
+                    key={episode.id}
+                    to={locked ? '#' : `/subjects/${subjectId}/episodes/${episode.id}`}
+                    onClick={(e) => {
+                      if (locked) {
+                        e.preventDefault()
+                        alert('กรุณาเรียนบทเรียนก่อนหน้าจบก่อน')
+                      }
+                    }}
+                  >
+                    <Card
+                      variant="bordered"
+                      className={`
+                        p-4 transition-all
+                        ${locked 
+                          ? 'opacity-60 cursor-not-allowed' 
+                          : 'hover:shadow-md hover:border-primary-200 cursor-pointer'}
+                      `}
+                    >
+                      <div className="flex items-start gap-4">
+                        {/* Order Number / Status Icon */}
+                        <div className="flex-shrink-0">
+                          {locked ? (
+                            <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                              <Lock className="w-5 h-5 text-gray-500" />
+                            </div>
+                          ) : status === 'completed' ? (
+                            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                              <CheckCircle2 className="w-5 h-5 text-green-600" />
+                            </div>
+                          ) : status === 'in_progress' ? (
+                            <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+                              <PlayCircle className="w-5 h-5 text-primary-600" />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">
+                              {episode.order_no}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between mb-2">
+                            <h3 className="font-semibold text-gray-900 line-clamp-1">
+                              {episode.title}
+                            </h3>
+                            {episode.points_reward && (
+                              <div className="flex items-center gap-1 text-sm text-yellow-600 ml-2">
+                                <Trophy className="w-4 h-4" />
+                                <span>{episode.points_reward}</span>
+                              </div>
+                            )}
+                          </div>
+                          {episode.description && (
+                            <p className="text-sm text-gray-600 line-clamp-2 mb-2">
+                              {episode.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-3 text-xs text-gray-500">
+                            {episode.duration_seconds && (
+                              <div className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                <span>{formatDuration(episode.duration_seconds)}</span>
+                              </div>
+                            )}
+                            {epProgress && epProgress.watched_percent > 0 && (
+                              <span>
+                                ดูแล้ว {Math.round(epProgress.watched_percent)}%
+                              </span>
+                            )}
+                            {status === 'completed' && (
+                              <Badge variant="success" size="sm">เรียนจบแล้ว</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  </Link>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

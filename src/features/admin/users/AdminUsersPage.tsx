@@ -18,6 +18,7 @@ import {
   Mail,
   Building,
   Trash2,
+  Trophy,
 } from 'lucide-react'
 import type { Profile } from '@/lib/database.types'
 import { cn, formatDate } from '@/lib/utils'
@@ -239,6 +240,64 @@ export function AdminUsersPage() {
     setActionMenuUser(null)
   }
 
+  // Manually add points to user wallet
+  const addPointsToUser = async (user: Profile) => {
+    try {
+      const input = window.prompt(
+        `กรอกจำนวนแต้มที่ต้องการเพิ่มให้ผู้ใช้:\n${user.full_name || user.email}`,
+        '10'
+      )
+      if (input === null) {
+        // User cancelled
+        setActionMenuUser(null)
+        return
+      }
+
+      const points = parseInt(input.trim(), 10)
+      if (isNaN(points) || points <= 0) {
+        showError('กรุณากรอกจำนวนแต้มเป็นตัวเลขมากกว่า 0')
+        return
+      }
+
+      // 1) Update wallet
+      const { error } = await supabase.rpc('wallet_add_points', {
+        p_user_id: user.id,
+        p_points: points,
+      })
+
+      if (error) {
+        console.error('Error adding points:', error)
+        showError(error.message || 'ไม่สามารถเพิ่มแต้มได้')
+        return
+      }
+
+      // 2) Create notification for user (points_earned)
+      try {
+        await supabase.rpc('create_notification', {
+          p_user_id: user.id,
+          p_type: 'points_earned',
+          p_title: 'ได้รับแต้มเพิ่มจากผู้ดูแลระบบ',
+          p_message: `ผู้ดูแลระบบเพิ่มแต้มให้คุณ ${points} แต้ม`,
+          p_data: {
+            source: 'admin_manual_add',
+            points_added: points,
+            admin_note: 'manual_adjustment',
+          } as any,
+        })
+      } catch (notifyError) {
+        // ไม่ต้อง fail ทั้งฟังก์ชัน ถ้าแค่แจ้งเตือนล้มเหลว
+        console.error('Error creating notification for addPointsToUser:', notifyError)
+      }
+
+      success(`เพิ่มแต้มให้ผู้ใช้สำเร็จ (+${points} แต้ม)`)
+    } catch (error: any) {
+      console.error('Error in addPointsToUser:', error)
+      showError(error.message || 'ไม่สามารถเพิ่มแต้มได้')
+    } finally {
+      setActionMenuUser(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -410,6 +469,13 @@ export function AdminUsersPage() {
                               >
                                 <Edit className="w-4 h-4" />
                                 แก้ไขข้อมูล
+                              </button>
+                              <button
+                                onClick={() => addPointsToUser(user)}
+                                className="flex items-center gap-3 w-full px-4 py-2 text-sm text-yellow-700 hover:bg-yellow-50"
+                              >
+                                <Trophy className="w-4 h-4" />
+                                เพิ่มแต้มให้ผู้ใช้
                               </button>
                               <button
                                 onClick={() => toggleUserStatus(user)}

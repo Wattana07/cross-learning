@@ -1,9 +1,9 @@
-import { useMemo } from 'react'
+import React, { useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Card, Badge, Spinner } from '@/components/ui'
 import { BookMarked, ArrowLeft, CheckCircle2, PlayCircle } from 'lucide-react'
 import { useCategory, useSubjectsWithCovers } from '@/hooks/useLearning'
-import { getSubjectsProgress, getCategoryProgress } from '../api'
+import { getSubjectsProgress, getCategoryProgress, getBookmarkedSubjectIds, toggleBookmark } from '../api'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { useQuery } from '@tanstack/react-query'
 
@@ -37,6 +37,40 @@ export function SubjectsPage() {
     staleTime: 1000 * 60 * 2, // 2 minutes
     refetchOnMount: false, // Don't refetch on mount if data is fresh
   })
+
+  // Load bookmarked subjects for this category
+  const { data: bookmarkedIds, refetch: refetchBookmarks } = useQuery({
+    queryKey: ['bookmarked-subject-ids', user?.id, subjectIds.join(',')],
+    queryFn: () => getBookmarkedSubjectIds(subjectIds),
+    enabled: !!user && subjectIds.length > 0,
+    staleTime: 1000 * 60 * 5,
+  })
+
+  const isBookmarked = (subjectId: string) => {
+    if (!bookmarkedIds) return false
+    return (bookmarkedIds as Set<string>).has(subjectId)
+  }
+
+  const handleToggleBookmark = async (
+    e: React.MouseEvent<HTMLButtonElement>,
+    subjectId: string
+  ) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (!user) {
+      alert('กรุณาเข้าสู่ระบบก่อนบันทึกวิชา')
+      return
+    }
+
+    try {
+      await toggleBookmark(subjectId)
+      await refetchBookmarks()
+    } catch (err) {
+      console.error('Error toggling bookmark:', err)
+      alert('ไม่สามารถบันทึกบุ๊คมาร์คได้ กรุณาลองใหม่อีกครั้ง')
+    }
+  }
 
   const loading = categoryLoading || subjectsLoading || loadingSubjectProgress || loadingCategoryProgress
   const error = categoryError
@@ -143,10 +177,31 @@ export function SubjectsPage() {
 
                 {/* Content */}
                 <div className="p-5">
-                  <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-start justify-between mb-2 gap-3">
                     <h3 className="text-lg font-semibold text-gray-900 group-hover:text-primary-600 transition-colors line-clamp-2 flex-1">
                       {subject.title}
                     </h3>
+                    {user && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleBookmark(e, subject.id)}
+                        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                          isBookmarked(subject.id)
+                            ? 'bg-yellow-100 border-yellow-400 text-yellow-700'
+                            : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-yellow-50 hover:border-yellow-300 hover:text-yellow-700'
+                        }`}
+                        title={isBookmarked(subject.id) ? 'ลบออกจากบุ๊คมาร์ค' : 'บันทึกวิชานี้ไว้ดูภายหลัง'}
+                      >
+                        <BookMarked
+                          className={
+                            isBookmarked(subject.id)
+                              ? 'w-4 h-4 text-yellow-600 fill-yellow-500'
+                              : 'w-4 h-4'
+                          }
+                        />
+                        <span>{isBookmarked(subject.id) ? 'บันทึกไว้แล้ว' : 'บันทึกวิชา'}</span>
+                      </button>
+                    )}
                   </div>
                   {subject.description && (
                     <p className="text-sm text-gray-500 line-clamp-2 mb-3">

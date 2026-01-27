@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { Card, Badge, Spinner } from '@/components/ui'
 import { Avatar } from '@/components/ui'
-import { Edit, Calendar, ChevronLeft, ChevronRight, Mail, Trophy } from 'lucide-react'
+import { Edit, Calendar, ChevronLeft, ChevronRight, Trophy } from 'lucide-react'
 import { cn, formatPoints } from '@/lib/utils'
 import { getMyWallet } from '@/lib/auth'
 import { supabase } from '@/lib/supabaseClient'
@@ -59,6 +59,7 @@ async function getOverallProgress(userId: string): Promise<{ progressPercent: nu
 export const RightSidebar = React.memo(function RightSidebar() {
   const { profile, user } = useAuthContext()
   const [currentDate, setCurrentDate] = useState(new Date())
+  const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate())
 
   // Fetch wallet and overall progress
   const { data: wallet, isLoading: walletLoading } = useQuery({
@@ -117,11 +118,15 @@ export const RightSidebar = React.memo(function RightSidebar() {
   const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
   const goToPreviousMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1))
+    const newDate = new Date(year, month - 1, 1)
+    setCurrentDate(newDate)
+    setSelectedDay(newDate.getDate())
   }
 
   const goToNextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1))
+    const newDate = new Date(year, month + 1, 1)
+    setCurrentDate(newDate)
+    setSelectedDay(newDate.getDate())
   }
 
   const isToday = (day: number) => {
@@ -132,44 +137,23 @@ export const RightSidebar = React.memo(function RightSidebar() {
     )
   }
 
-  // Filter approved bookings for current month (for schedule display)
-  const currentMonthScheduleBookings = useMemo(() => {
+  // Bookings for selected day (approved bookings)
+  const selectedDayBookings = useMemo(() => {
     if (!bookings || bookings.length === 0) return []
-    
+    if (selectedDay === null) return []
+
     return bookings
       .filter((booking: RoomBooking) => {
         const startDate = new Date(booking.start_at)
         return (
           booking.status === 'approved' &&
           startDate.getFullYear() === year &&
-          startDate.getMonth() === month
+          startDate.getMonth() === month &&
+          startDate.getDate() === selectedDay
         )
       })
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
-      .slice(0, 5) // Show max 5 bookings for current month
-  }, [bookings, year, month])
-
-
-  // Get notifications (approved bookings within next 7 days)
-  const notifications = useMemo(() => {
-    if (!bookings || bookings.length === 0) return []
-    
-    const sevenDaysFromNow = new Date(today)
-    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
-    
-    return bookings
-      .filter((booking: RoomBooking) => {
-        const startDate = new Date(booking.start_at)
-        startDate.setHours(0, 0, 0, 0)
-        return (
-          booking.status === 'approved' &&
-          startDate >= today &&
-          startDate <= sevenDaysFromNow
-        )
-      })
-      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
-      .slice(0, 5) // Show max 5 notifications
-  }, [bookings, today])
+  }, [bookings, year, month, selectedDay])
 
   // Generate calendar days
   const calendarDays = []
@@ -328,94 +312,72 @@ export const RightSidebar = React.memo(function RightSidebar() {
           {/* Calendar days */}
           <div className="grid grid-cols-7 gap-1">
             {calendarDays.map((day, index) => (
-              <div
+              <button
                 key={index}
+                type="button"
+                disabled={day === null}
+                onClick={() => day && setSelectedDay(day)}
                 className={cn(
-                  'aspect-square flex items-center justify-center text-sm rounded-lg',
+                  'aspect-square flex items-center justify-center text-sm rounded-lg transition-colors',
                   day === null
                     ? ''
-                    : isToday(day)
+                    : selectedDay === day && month === currentDate.getMonth() && year === currentDate.getFullYear()
                     ? 'bg-primary-600 text-white font-semibold'
-                    : 'text-gray-700 hover:bg-gray-100 cursor-pointer'
+                    : isToday(day)
+                    ? 'border border-primary-500 text-primary-700'
+                    : 'text-gray-700 hover:bg-gray-100'
                 )}
               >
                 {day}
-              </div>
+              </button>
             ))}
           </div>
         </div>
 
-        {/* Schedule Items */}
+        {/* Schedule Items - activities for selected day */}
         <div className="space-y-3">
+          <p className="text-xs text-gray-500 mb-1">
+            กิจกรรมวันที่{' '}
+            {new Date(year, month, selectedDay ?? today.getDate()).toLocaleDateString('th-TH', {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })}
+          </p>
           {bookingsLoading ? (
             <div className="flex items-center justify-center py-4">
               <Spinner size="sm" />
             </div>
-          ) : currentMonthScheduleBookings.length === 0 ? (
+          ) : selectedDayBookings.length === 0 ? (
             <div className="text-center py-4 text-sm text-gray-500">
-              ไม่มีการจองในเดือนนี้
+              ยังไม่มีกิจกรรมในวันนี้
             </div>
           ) : (
-            currentMonthScheduleBookings.map((booking: RoomBooking) => {
+            selectedDayBookings.map((booking: RoomBooking) => {
               const startDate = new Date(booking.start_at)
-              const day = startDate.getDate()
-              const time = startDate.toLocaleTimeString('th-TH', {
+              const endDate = new Date(booking.end_at)
+              const timeRange = `${startDate.toLocaleTimeString('th-TH', {
                 hour: '2-digit',
                 minute: '2-digit',
-              })
-              
+              })} - ${endDate.toLocaleTimeString('th-TH', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}`
+
               return (
                 <div
                   key={booking.id}
                   className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-                  onClick={() => window.location.href = '/rooms'}
-                >
-                  <div className="text-sm font-medium text-gray-900">
-                    {day} {monthNames[month]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900">{time}</div>
-                    <div className="text-xs text-gray-500 truncate" title={booking.title}>
-                      {booking.title}
-                    </div>
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </Card>
-
-      {/* Reminders Section */}
-      <Card variant="bordered" className="p-5">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">การแจ้งเตือน</h3>
-        <div className="space-y-3">
-          {bookingsLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <Spinner size="sm" />
-            </div>
-          ) : notifications.length === 0 ? (
-            <div className="text-center py-4 text-sm text-gray-500">
-              ไม่มีการแจ้งเตือน
-            </div>
-          ) : (
-            notifications.map((booking: RoomBooking) => {
-              const startDate = new Date(booking.start_at)
-              const dateStr = formatThaiDate(startDate)
-              
-              return (
-                <div
-                  key={booking.id}
-                  className="flex items-start gap-3 p-3 rounded-lg bg-primary-50 border border-primary-100 hover:bg-primary-100 transition-colors"
+                  onClick={() => (window.location.href = '/rooms')}
                 >
                   <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center flex-shrink-0">
                     <Calendar className="w-5 h-5 text-primary-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-gray-900 mb-1 truncate" title={booking.title}>
+                    <div className="text-sm font-medium text-gray-900 truncate" title={booking.title}>
                       {booking.title}
-                    </h4>
-                    <p className="text-xs text-gray-500">{dateStr}</p>
+                    </div>
+                    <div className="text-xs text-gray-500">{timeRange}</div>
                   </div>
                 </div>
               )

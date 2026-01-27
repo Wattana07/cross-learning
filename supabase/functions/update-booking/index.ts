@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // if time changed, check overlaps
+    // if time changed, check overlaps and handle points
     if (startAt || endAt) {
       // check blocks
       const blocks = await adminClient
@@ -183,6 +183,76 @@ Deno.serve(async (req) => {
           },
         });
       }
+
+      // ============================================
+      // Points System: Recalculate points if time changed
+      // ============================================
+      const oldStart = new Date(booking.start_at);
+      const oldEnd = new Date(booking.end_at);
+      const oldHours = Math.ceil((oldEnd.getTime() - oldStart.getTime()) / (1000 * 60 * 60));
+      const oldPoints = oldHours * 10;
+
+      const newHours = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60));
+      const newPoints = newHours * 10;
+      const pointsDiff = newPoints - oldPoints;
+
+      if (pointsDiff > 0) {
+        // Need more points - check and deduct
+        const wallet = await adminClient
+          .from("user_wallet")
+          .select("total_points")
+          .eq("user_id", booking.booked_by_user_id)
+          .single();
+
+        const availablePoints = wallet.data?.total_points || 0;
+        if (availablePoints < pointsDiff) {
+          return new Response(JSON.stringify({ 
+            ok: false, 
+            reason: "INSUFFICIENT_POINTS",
+            required: pointsDiff,
+            available: availablePoints
+          }), { 
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          });
+        }
+
+        // Deduct additional points
+        await adminClient.rpc("wallet_deduct_points", {
+          p_user_id: booking.booked_by_user_id,
+          p_points: pointsDiff
+        });
+
+        // Record transaction
+        await adminClient.from("point_transactions").insert({
+          user_id: booking.booked_by_user_id,
+          rule_key: "booking_use",
+          ref_type: "booking",
+          ref_id: bookingId,
+          points: -pointsDiff,
+        });
+      } else if (pointsDiff < 0) {
+        // Refund points
+        await adminClient.rpc("wallet_add_points", {
+          p_user_id: booking.booked_by_user_id,
+          p_points: Math.abs(pointsDiff)
+        });
+
+        // Record transaction
+        await adminClient.from("point_transactions").insert({
+          user_id: booking.booked_by_user_id,
+          rule_key: "booking_use",
+          ref_type: "booking",
+          ref_id: bookingId,
+          points: Math.abs(pointsDiff), // Positive for refund
+        });
+      }
+
+      // Update points_used
+      updateData.points_used = newPoints;
     }
 
     // update booking

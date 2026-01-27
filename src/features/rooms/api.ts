@@ -191,8 +191,37 @@ export async function createBooking(booking: {
   additional_equipment?: string
   email?: string
 }): Promise<RoomBooking> {
-  const { data: { user } } = await supabase.auth.getUser()
+  // ============================================
+  // DEBUG: Step 1 - Check Environment Variables
+  // ============================================
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  console.log('='.repeat(60))
+  console.log('[DEBUG] Step 1: Environment Check')
+  console.log('[DEBUG] VITE_SUPABASE_URL:', supabaseUrl)
+  console.log('[DEBUG] VITE_SUPABASE_ANON_KEY (first 50 chars):', supabaseAnonKey?.substring(0, 50))
+  console.log('[DEBUG] ANON_KEY starts with "eyJ"?:', supabaseAnonKey?.startsWith('eyJ'))
+  console.log('[DEBUG] ANON_KEY length:', supabaseAnonKey?.length)
+
+  // ============================================
+  // DEBUG: Step 2 - Check User Authentication
+  // ============================================
+  console.log('[DEBUG] Step 2: Checking user authentication...')
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  console.log('[DEBUG] User:', user ? { id: user.id, email: user.email } : 'null')
+  console.log('[DEBUG] User error:', userError)
+  
   if (!user) throw new Error('User not authenticated')
+
+  // ============================================
+  // DEBUG: Step 3 - Check Session/Token
+  // ============================================
+  console.log('[DEBUG] Step 3: Getting session...')
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+  console.log('[DEBUG] Session exists:', !!sessionData?.session)
+  console.log('[DEBUG] Session error:', sessionError)
+  console.log('[DEBUG] Access token (first 50 chars):', sessionData?.session?.access_token?.substring(0, 50))
+  console.log('[DEBUG] Token expires at:', sessionData?.session?.expires_at ? new Date(sessionData.session.expires_at * 1000).toISOString() : 'N/A')
 
   // Validate room_id is present
   if (!booking.room_id) {
@@ -234,26 +263,128 @@ export async function createBooking(booking: {
   }
   siteUrl = siteUrl.replace(/\/$/, '');
 
-  // Call Edge Function for server-side validation
+  // ============================================
+  // DEBUG: Step 4 - Prepare Function Call
+  // ============================================
+  const functionUrl = `${supabaseUrl}/functions/v1/create-booking`
+  const requestBody = {
+    roomId: booking.room_id,
+    title: booking.title,
+    description: description || undefined,
+    startAt: booking.start_at,
+    endAt: booking.end_at,
+    email: booking.email,
+    resendApiKey: resendApiKey,
+    siteUrl: siteUrl,
+  }
+  console.log('[DEBUG] Step 4: Preparing function call')
+  console.log('[DEBUG] Function URL:', functionUrl)
+  console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2))
+
+  // ============================================
+  // DEBUG: Step 5 - Test direct fetch FIRST
+  // ============================================
+  console.log('[DEBUG] Step 5: Testing direct fetch to Edge Function...')
+  try {
+    const directResponse = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sessionData?.session?.access_token}`,
+        'apikey': supabaseAnonKey,
+      },
+      body: JSON.stringify(requestBody),
+    })
+    console.log('[DEBUG] Direct fetch status:', directResponse.status)
+    console.log('[DEBUG] Direct fetch statusText:', directResponse.statusText)
+    console.log('[DEBUG] Direct fetch headers:', Object.fromEntries(directResponse.headers.entries()))
+    
+    const directText = await directResponse.text()
+    console.log('[DEBUG] Direct fetch response body:', directText)
+    
+    // If direct fetch worked, parse and return
+    if (directResponse.ok) {
+      try {
+        const directData = JSON.parse(directText)
+        console.log('[DEBUG] Direct fetch parsed data:', directData)
+        
+        if (directData.ok && directData.booking) {
+          console.log('[DEBUG] SUCCESS via direct fetch!')
+          await logger.success('booking_create', {
+            resourceType: 'booking',
+            resourceId: directData.booking.id,
+            details: { room_id: booking.room_id, title: booking.title, start_at: booking.start_at },
+          })
+          return directData.booking
+        } else if (!directData.ok) {
+          // Handle business logic errors
+          const reasonMessages: Record<string, string> = {
+            'INVALID_TIME': 'เวลาสิ้นสุดต้องมากกว่าเวลาเริ่มต้น',
+            'CANNOT_BOOK_PAST': 'ไม่สามารถจองเวลาในอดีตได้',
+            'TOO_SOON': 'ต้องจองล่วงหน้าอย่างน้อย 7 วัน',
+            'USER_INACTIVE': 'บัญชีผู้ใช้ถูกปิดการใช้งาน',
+            'ROOM_NOT_FOUND': 'ไม่พบห้องประชุม',
+            'ROOM_NOT_ACTIVE': 'ห้องประชุมไม่พร้อมใช้งาน',
+            'BLOCKED': 'ช่วงเวลานี้ถูกบล็อกไว้',
+            'TIME_CONFLICT': 'ช่วงเวลานี้มีการจองแล้ว',
+            'INSERT_FAIL': 'เกิดข้อผิดพลาดในการบันทึกข้อมูล',
+            'INSUFFICIENT_POINTS': `แต้มไม่พอ ต้องการ ${directData.required || 0} แต้ม แต่มีเพียง ${directData.available || 0} แต้ม`,
+            'DAILY_LIMIT_EXCEEDED': `เกินขีดจำกัดรายวัน (จองได้ไม่เกิน 8 ชั่วโมงต่อวัน)`,
+            'MONTHLY_LIMIT_EXCEEDED': `เกินขีดจำกัดรายเดือน (จองได้ไม่เกิน 20 ชั่วโมงต่อเดือน)`,
+          }
+          const errorMsg = reasonMessages[directData.reason] || directData.reason || 'เกิดข้อผิดพลาดในการจอง'
+          throw new Error(errorMsg)
+        }
+      } catch (parseError) {
+        console.log('[DEBUG] Direct fetch parse error:', parseError)
+      }
+    }
+  } catch (fetchError: any) {
+    console.log('[DEBUG] Direct fetch FAILED:', fetchError.message)
+    console.log('[DEBUG] Fetch error details:', fetchError)
+  }
+
+  // ============================================
+  // DEBUG: Step 6 - Call via Supabase SDK
+  // ============================================
+  console.log('[DEBUG] Step 6: Calling via supabase.functions.invoke...')
   const { data, error } = await supabase.functions.invoke('create-booking', {
-    body: {
-      roomId: booking.room_id,
-      title: booking.title,
-      description: description || undefined,
-      startAt: booking.start_at,
-      endAt: booking.end_at,
-      email: booking.email,
-      resendApiKey: resendApiKey,
-      siteUrl: siteUrl,
-    },
+    body: requestBody,
   })
+  console.log('[DEBUG] SDK invoke data:', data)
+  console.log('[DEBUG] SDK invoke error:', error)
 
   if (error) {
+    // ============================================
+    // DEBUG: Step 7 - Error Details
+    // ============================================
+    console.log('[DEBUG] Step 7: SDK invoke ERROR')
+    console.log('[DEBUG] Error name:', error.name)
+    console.log('[DEBUG] Error message:', error.message)
+    console.log('[DEBUG] Error stack:', error.stack)
+    console.log('[DEBUG] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
+    console.log('='.repeat(60))
+    
     await logger.error('booking_create', {
       resourceType: 'booking',
       errorMessage: error.message,
       details: { room_id: booking.room_id, title: booking.title },
     })
+    
+    // Provide helpful error message for Edge Function connection issues
+    if (error.message?.includes('Failed to send') || error.message?.includes('fetch failed') || error.message?.includes('NetworkError')) {
+      throw new Error(
+        'ไม่สามารถเชื่อมต่อกับ Edge Function ได้\n\n' +
+        'วิธีแก้ไข:\n' +
+        '1. ตรวจสอบว่า Edge Function "create-booking" ถูก deploy แล้ว\n' +
+        '   - เปิด Terminal และรัน: npx supabase functions deploy create-booking\n' +
+        '2. ตรวจสอบว่า Supabase Project ถูก link แล้ว\n' +
+        '   - รัน: npx supabase link --project-ref wmfuzaahfdknfjvqwwsi\n' +
+        '3. ตรวจสอบ Network Connection\n\n' +
+        `Error: ${error.message}`
+      )
+    }
+    
     throw error
   }
   
@@ -268,6 +399,9 @@ export async function createBooking(booking: {
       'BLOCKED': 'ช่วงเวลานี้ถูกบล็อกไว้',
       'TIME_CONFLICT': 'ช่วงเวลานี้มีการจองแล้ว',
       'INSERT_FAIL': 'เกิดข้อผิดพลาดในการบันทึกข้อมูล',
+      'INSUFFICIENT_POINTS': `แต้มไม่พอ ต้องการ ${data.required || 0} แต้ม แต่มีเพียง ${data.available || 0} แต้ม (${data.hours || 0} ชั่วโมง = ${data.required || 0} แต้ม)`,
+      'DAILY_LIMIT_EXCEEDED': `เกินขีดจำกัดรายวัน (จองได้ไม่เกิน 8 ชั่วโมงต่อวัน) ปัจจุบัน: ${data.current || 0} ชั่วโมง, ต้องการ: ${data.requested || 0} ชั่วโมง`,
+      'MONTHLY_LIMIT_EXCEEDED': `เกินขีดจำกัดรายเดือน (จองได้ไม่เกิน 20 ชั่วโมงต่อเดือน) ปัจจุบัน: ${data.current || 0} ชั่วโมง, ต้องการ: ${data.requested || 0} ชั่วโมง`,
     }
     const errorMsg = reasonMessages[data.reason] || data.reason || 'เกิดข้อผิดพลาดในการจอง'
     await logger.error('booking_create', {
@@ -314,6 +448,15 @@ export async function updateBooking(booking: {
       resourceId: booking.bookingId,
       errorMessage: error.message,
     })
+    
+    if (error.message?.includes('Failed to send') || error.message?.includes('fetch failed') || error.message?.includes('NetworkError')) {
+      throw new Error(
+        'ไม่สามารถเชื่อมต่อกับ Edge Function ได้\n\n' +
+        'ตรวจสอบว่า Edge Function "update-booking" ถูก deploy แล้ว\n' +
+        `Error: ${error.message}`
+      )
+    }
+    
     throw error
   }
   
@@ -327,6 +470,7 @@ export async function updateBooking(booking: {
       'BLOCKED': 'ช่วงเวลานี้ถูกบล็อกไว้',
       'TIME_CONFLICT': 'ช่วงเวลานี้มีการจองแล้ว',
       'UPDATE_FAIL': 'เกิดข้อผิดพลาดในการอัปเดต',
+      'INSUFFICIENT_POINTS': `แต้มไม่พอสำหรับการแก้ไข ต้องการ ${data.required || 0} แต้ม แต่มีเพียง ${data.available || 0} แต้ม`,
     }
     const errorMsg = reasonMessages[data.reason] || data.reason || 'เกิดข้อผิดพลาดในการแก้ไข'
     await logger.error('booking_update', {
@@ -341,7 +485,11 @@ export async function updateBooking(booking: {
   await logger.success('booking_update', {
     resourceType: 'booking',
     resourceId: booking.bookingId,
-    details: updates,
+    details: { 
+      title: booking.title,
+      start_at: booking.start_at,
+      end_at: booking.end_at,
+    },
   })
 
   return data.booking
@@ -362,6 +510,15 @@ export async function cancelBooking(bookingId: string): Promise<RoomBooking> {
       resourceId: bookingId,
       errorMessage: error.message,
     })
+    
+    if (error.message?.includes('Failed to send') || error.message?.includes('fetch failed') || error.message?.includes('NetworkError')) {
+      throw new Error(
+        'ไม่สามารถเชื่อมต่อกับ Edge Function ได้\n\n' +
+        'ตรวจสอบว่า Edge Function "cancel-booking" ถูก deploy แล้ว\n' +
+        `Error: ${error.message}`
+      )
+    }
+    
     throw error
   }
   

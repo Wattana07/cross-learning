@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabaseClient'
 import type { Category, Subject, Episode, UserProgress } from '@/lib/database.types'
 import { getSubjectCoverUrl } from '@/lib/storage'
+import { logger } from '@/lib/logger'
 
 // Fetch category by ID
 export async function fetchCategory(id: string): Promise<Category> {
@@ -700,4 +701,337 @@ export async function getCategoriesProgress(
   })
 
   return progressMap
+}
+
+// ============================================
+// Bookmark Functions
+// ============================================
+
+export interface Bookmark {
+  id: string
+  user_id: string
+  subject_id: string
+  created_at: string
+}
+
+// Check if subject is bookmarked
+export async function isSubjectBookmarked(subjectId: string): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return false
+
+  const { data, error } = await supabase
+    .from('bookmarks')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('subject_id', subjectId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Error checking bookmark:', error)
+    return false
+  }
+
+  return !!data
+}
+
+// Add bookmark
+export async function addBookmark(subjectId: string): Promise<Bookmark | null> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('User not authenticated')
+
+  const { data, error } = await supabase
+    .from('bookmarks')
+    .insert({
+      user_id: user.id,
+      subject_id: subjectId,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    // Ignore duplicate error (already bookmarked)
+    if (error.code === '23505') {
+      return null
+    }
+    throw error
+  }
+
+  await logger.info('bookmark_add', {
+    resourceType: 'subject',
+    resourceId: subjectId,
+  })
+
+  return data
+}
+
+// Remove bookmark
+export async function removeBookmark(subjectId: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('User not authenticated')
+
+  const { error } = await supabase
+    .from('bookmarks')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('subject_id', subjectId)
+
+  if (error) throw error
+
+  await logger.info('bookmark_remove', {
+    resourceType: 'subject',
+    resourceId: subjectId,
+  })
+}
+
+// Toggle bookmark
+export async function toggleBookmark(subjectId: string): Promise<boolean> {
+  const isBookmarked = await isSubjectBookmarked(subjectId)
+  
+  if (isBookmarked) {
+    await removeBookmark(subjectId)
+    return false
+  } else {
+    await addBookmark(subjectId)
+    return true
+  }
+}
+
+// Get all bookmarked subjects
+export async function getBookmarkedSubjects(): Promise<(Subject & { category_name?: string; bookmarked_at: string })[]> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+
+  const { data, error } = await supabase
+    .from('bookmarks')
+    .select(`
+      created_at,
+      subjects:subject_id (
+        *,
+        categories:category_id (
+          name
+        )
+      )
+    `)
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching bookmarks:', error)
+    return []
+  }
+
+  return (data || [])
+    .map((bookmark: any) => ({
+      ...bookmark.subjects,
+      category_name: bookmark.subjects?.categories?.name,
+      bookmarked_at: bookmark.created_at,
+    }))
+    .filter((subject: any) => subject.id)
+}
+
+// Get bookmark IDs for multiple subjects (for batch checking)
+export async function getBookmarkedSubjectIds(subjectIds: string[]): Promise<Set<string>> {
+  if (subjectIds.length === 0) return new Set()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Set()
+
+  const { data, error } = await supabase
+    .from('bookmarks')
+    .select('subject_id')
+    .eq('user_id', user.id)
+    .in('subject_id', subjectIds)
+
+  if (error) {
+    console.error('Error fetching bookmark IDs:', error)
+    return new Set()
+  }
+
+  return new Set((data || []).map((b: any) => b.subject_id))
+}
+
+// ============================================
+// Recently Watched (for Activity page)
+// ============================================
+
+export async function getRecentlyWatched(limit: number = 10): Promise<
+  Array<{
+    episode: Episode
+    subject: Subject & { category_name?: string }
+    progress: UserProgress
+    updated_at: string
+  }>
+> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+
+  const { data, error } = await supabase
+    .from('user_episode_progress')
+    .select(`
+      *,
+      episodes:episode_id (
+        *,
+        subjects:subject_id (
+          *,
+          categories:category_id (
+            name
+          )
+        )
+      )
+    `)
+    .eq('user_id', user.id)
+    .gt('watched_percent', 0)
+    .order('updated_at', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    console.error('Error fetching recently watched:', error)
+    return []
+  }
+
+  return (data || [])
+    .map((p: any) => {
+      const episode = p.episodes
+      const subject = episode?.subjects
+      return {
+        episode,
+        subject: subject
+          ? {
+              ...subject,
+              category_name: subject.categories?.name,
+            }
+          : null,
+        progress: p,
+        updated_at: p.updated_at,
+      }
+    })
+    .filter((item: any) => item.episode && item.subject)
+}
+
+// ============================================
+// Learning Statistics (for Activity page)
+// ============================================
+
+export async function getLearningStats(): Promise<{
+  totalEpisodesWatched: number
+  totalEpisodesCompleted: number
+  totalSubjectsStarted: number
+  totalSubjectsCompleted: number
+  totalWatchTimeMinutes: number
+  currentStreak: number
+  longestStreak: number
+}> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return {
+      totalEpisodesWatched: 0,
+      totalEpisodesCompleted: 0,
+      totalSubjectsStarted: 0,
+      totalSubjectsCompleted: 0,
+      totalWatchTimeMinutes: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+    }
+  }
+
+  // Get all user progress
+  const { data: progressData = [], error: progressError } = await supabase
+    .from('user_episode_progress')
+    .select('episode_id, watched_percent, completed_at, last_position_seconds')
+    .eq('user_id', user.id)
+
+  if (progressError) {
+    console.error('Error fetching learning stats:', progressError)
+    return {
+      totalEpisodesWatched: 0,
+      totalEpisodesCompleted: 0,
+      totalSubjectsStarted: 0,
+      totalSubjectsCompleted: 0,
+      totalWatchTimeMinutes: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+    }
+  }
+
+  const totalEpisodesWatched = progressData.filter((p: any) => p.watched_percent > 0).length
+  const totalEpisodesCompleted = progressData.filter((p: any) => p.completed_at || p.watched_percent >= 90).length
+  const totalWatchTimeMinutes = Math.round(
+    progressData.reduce((acc: number, p: any) => acc + (p.last_position_seconds || 0), 0) / 60
+  )
+
+  // Get episode to subject mapping
+  const episodeIds = progressData.map((p: any) => p.episode_id)
+  
+  if (episodeIds.length === 0) {
+    return {
+      totalEpisodesWatched: 0,
+      totalEpisodesCompleted: 0,
+      totalSubjectsStarted: 0,
+      totalSubjectsCompleted: 0,
+      totalWatchTimeMinutes: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+    }
+  }
+
+  const { data: episodes = [] } = await supabase
+    .from('episodes')
+    .select('id, subject_id')
+    .in('id', episodeIds)
+
+  // Count unique subjects
+  const subjectsStarted = new Set(episodes.map((e: any) => e.subject_id))
+  
+  // Count completed subjects (all episodes completed)
+  const { data: allSubjectEpisodes = [] } = await supabase
+    .from('episodes')
+    .select('id, subject_id')
+    .in('subject_id', Array.from(subjectsStarted))
+    .eq('status', 'published')
+
+  const episodesBySubject = new Map<string, string[]>()
+  allSubjectEpisodes.forEach((e: any) => {
+    if (!episodesBySubject.has(e.subject_id)) {
+      episodesBySubject.set(e.subject_id, [])
+    }
+    episodesBySubject.get(e.subject_id)!.push(e.id)
+  })
+
+  const completedEpisodeIds = new Set(
+    progressData
+      .filter((p: any) => p.completed_at || p.watched_percent >= 90)
+      .map((p: any) => p.episode_id)
+  )
+
+  let totalSubjectsCompleted = 0
+  episodesBySubject.forEach((subjectEpisodeIds) => {
+    const allCompleted = subjectEpisodeIds.every((id) => completedEpisodeIds.has(id))
+    if (allCompleted && subjectEpisodeIds.length > 0) {
+      totalSubjectsCompleted++
+    }
+  })
+
+  // Get streak from user_wallet if exists
+  let currentStreak = 0
+  let longestStreak = 0
+  const { data: wallet } = await supabase
+    .from('user_wallet')
+    .select('current_streak, longest_streak')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (wallet) {
+    currentStreak = wallet.current_streak || 0
+    longestStreak = wallet.longest_streak || 0
+  }
+
+  return {
+    totalEpisodesWatched,
+    totalEpisodesCompleted,
+    totalSubjectsStarted: subjectsStarted.size,
+    totalSubjectsCompleted,
+    totalWatchTimeMinutes,
+    currentStreak,
+    longestStreak,
+  }
 }

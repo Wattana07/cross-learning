@@ -222,17 +222,6 @@ export function ProfilePage() {
   
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Debug info - Always show */}
-      <div className="bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 rounded">
-        <div><strong>Debug Info:</strong></div>
-        <div>User ID: {user?.id || 'null'}</div>
-        <div>Profile ID: {profile?.id || 'null'}</div>
-        <div>Wallet Loading: {walletLoading.toString()}</div>
-        <div>Progress Loading: {progressLoading.toString()}</div>
-        <div>Wallet Data: {JSON.stringify(wallet)}</div>
-        <div>Progress Data: {JSON.stringify(overallProgress)}</div>
-      </div>
-      
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">โปรไฟล์</h1>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthContext } from '@/contexts/AuthContext'
+import { useTheme } from '@/contexts/ThemeContext'
 import { Avatar } from '@/components/ui'
 import {
   BookOpen,
@@ -19,6 +20,8 @@ import {
   Settings,
   FileText,
   Server,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -39,6 +42,7 @@ export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const { profile, signOut } = useAuthContext()
+  const { actualTheme, toggleTheme } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -131,6 +135,21 @@ export function AdminLayout() {
             <span className="text-sm font-medium text-gray-700">ระบบหลังบ้าน</span>
           </div>
 
+          {/* Theme toggle and User menu */}
+          <div className="flex items-center gap-2">
+            {/* Theme toggle button */}
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+              title={actualTheme === 'dark' ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด'}
+            >
+              {actualTheme === 'dark' ? (
+                <Sun className="w-5 h-5" />
+              ) : (
+                <Moon className="w-5 h-5" />
+              )}
+            </button>
+
           {/* User menu */}
           <div className="relative">
             <button
@@ -184,6 +203,7 @@ export function AdminLayout() {
                 </div>
               </>
             )}
+          </div>
           </div>
         </header>
 

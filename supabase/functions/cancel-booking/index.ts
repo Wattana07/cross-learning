@@ -126,6 +126,28 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ============================================
+    // Points System: Refund points when cancelling
+    // ============================================
+    const pointsToRefund = booking.points_used || 0;
+    
+    if (pointsToRefund > 0) {
+      // Refund points
+      await adminClient.rpc("wallet_add_points", {
+        p_user_id: booking.booked_by_user_id,
+        p_points: pointsToRefund
+      });
+
+      // Record transaction
+      await adminClient.from("point_transactions").insert({
+        user_id: booking.booked_by_user_id,
+        rule_key: "booking_use",
+        ref_type: "booking",
+        ref_id: bookingId,
+        points: pointsToRefund, // Positive for refund
+      });
+    }
+
     // update status to cancelled
     const upd = await adminClient.from("room_bookings")
       .update({ status: 'cancelled' })

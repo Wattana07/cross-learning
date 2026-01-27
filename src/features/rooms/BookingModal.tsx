@@ -3,6 +3,8 @@ import { Modal, ModalFooter, Button, Input } from '@/components/ui'
 import { createBooking, fetchTableLayoutsByCategory, fetchRoomCategories, fetchRoomsByCategory } from './api'
 import { useAuthContext } from '@/contexts/AuthContext'
 import { useToast } from '@/contexts/ToastContext'
+import { getMyWallet } from '@/features/rewards/api'
+import { formatPoints } from '@/lib/utils'
 import { 
   User, 
   Hash, 
@@ -14,9 +16,12 @@ import {
   Clock,
   Settings,
   FolderOpen,
-  Mail
+  Mail,
+  Coins,
+  Info
 } from 'lucide-react'
 import type { RoomWithDetails } from './api'
+import type { UserWallet } from '@/lib/database.types'
 
 interface BookingModalProps {
   isOpen: boolean
@@ -27,7 +32,29 @@ interface BookingModalProps {
   selectedDate?: Date | null
 }
 
-// Time slots (can be customized)
+// Booking types
+const BOOKING_TYPES = [
+  { value: 'full_day', label: 'ทั้งวัน (9:00 - 18:00)', hours: 8, points: 80, startTime: '09:00', endTime: '18:00' },
+  { value: 'half_morning', label: 'ครึ่งวันเช้า (9:00 - 12:00)', hours: 3, points: 30, startTime: '09:00', endTime: '12:00' },
+  { value: 'half_afternoon', label: 'ครึ่งวันบ่าย (13:00 - 18:00)', hours: 5, points: 50, startTime: '13:00', endTime: '18:00' },
+  { value: 'hourly', label: 'รายชั่วโมง (กำหนดเอง)', hours: 0, points: 0, startTime: '', endTime: '' },
+]
+
+// Time slots for hourly booking
+const HOURLY_TIME_SLOTS = [
+  { value: '09:00', label: '09:00' },
+  { value: '10:00', label: '10:00' },
+  { value: '11:00', label: '11:00' },
+  { value: '12:00', label: '12:00' },
+  { value: '13:00', label: '13:00' },
+  { value: '14:00', label: '14:00' },
+  { value: '15:00', label: '15:00' },
+  { value: '16:00', label: '16:00' },
+  { value: '17:00', label: '17:00' },
+  { value: '18:00', label: '18:00' },
+]
+
+// Legacy time slots (keep for backward compatibility)
 const TIME_SLOTS = [
   { value: '08:00-10:00', label: '08:00 - 10:00' },
   { value: '10:00-12:00', label: '10:00 - 12:00' },
@@ -45,6 +72,7 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
   const [tableLayouts, setTableLayouts] = useState<Array<{ id: string; name: string; max_capacity: number }>>([])
   const [loadingLayouts, setLoadingLayouts] = useState(false)
   const [availableRooms, setAvailableRooms] = useState<RoomWithDetails[]>(rooms)
+  const [wallet, setWallet] = useState<UserWallet | null>(null)
 
   const [formData, setFormData] = useState({
     room_category_id: '',
@@ -54,6 +82,7 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
     speaker_name: '',
     event_description: '',
     booking_date: '',
+    booking_type: '', // 'full_day', 'half_morning', 'half_afternoon', 'hourly'
     time_slot: '',
     start_time: '',
     end_time: '',
@@ -101,8 +130,10 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
         speaker_name: '',
         event_description: '',
         booking_date: bookingDate,
+        booking_type: '',
         time_slot: '',
-        room_type_id: '',
+        start_time: '',
+        end_time: '',
         additional_equipment: '',
         email: userEmail,
       })
@@ -184,13 +215,20 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
       return
     }
 
-    // Validate time - either time_slot or custom time must be provided
-    if (!formData.time_slot && (!formData.start_time || !formData.end_time)) {
-      setError('กรุณาเลือกช่วงเวลาหรือระบุเวลาเอง')
+    // Validate booking type
+    if (!formData.booking_type) {
+      setError('กรุณาเลือกประเภทการจอง')
       return
     }
 
-    if (formData.time_slot === 'custom' && (!formData.start_time || !formData.end_time)) {
+    // Validate time for hourly booking
+    if (formData.booking_type === 'hourly' && (!formData.start_time || !formData.end_time)) {
+      setError('กรุณาระบุเวลาเริ่มต้นและเวลาสิ้นสุด')
+      return
+    }
+
+    // Legacy validation for time_slot (keep for backward compatibility)
+    if (!formData.booking_type && formData.time_slot === 'custom' && (!formData.start_time || !formData.end_time)) {
       setError('กรุณาระบุเวลาเริ่มต้นและเวลาสิ้นสุด')
       return
     }
@@ -210,19 +248,32 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
     setLoading(true)
 
     try {
-      // Parse time - use custom time if provided, otherwise use time_slot
+      // Parse time based on booking type
       let startTime = ''
       let endTime = ''
       
-      if (formData.time_slot === 'custom' && formData.start_time && formData.end_time) {
-        // Use custom time input
+      if (formData.booking_type && formData.booking_type !== 'hourly') {
+        // Use predefined booking type times
+        const selectedType = BOOKING_TYPES.find(t => t.value === formData.booking_type)
+        if (selectedType) {
+          startTime = selectedType.startTime
+          endTime = selectedType.endTime
+        } else {
+          throw new Error('ประเภทการจองไม่ถูกต้อง')
+        }
+      } else if (formData.booking_type === 'hourly' && formData.start_time && formData.end_time) {
+        // Use hourly custom time
+        startTime = formData.start_time
+        endTime = formData.end_time
+      } else if (formData.time_slot === 'custom' && formData.start_time && formData.end_time) {
+        // Legacy: Use custom time input
         startTime = formData.start_time
         endTime = formData.end_time
       } else if (formData.time_slot && formData.time_slot !== 'custom') {
-        // Use predefined time slot
+        // Legacy: Use predefined time slot
         [startTime, endTime] = formData.time_slot.split('-')
       } else {
-        throw new Error('กรุณาเลือกช่วงเวลาหรือระบุเวลาเอง')
+        throw new Error('กรุณาเลือกประเภทการจองหรือระบุเวลาเอง')
       }
 
       // Create date in local timezone to avoid timezone conversion issues
@@ -334,8 +385,10 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
       speaker_name: '',
       event_description: '',
       booking_date: '',
+      booking_type: '',
       time_slot: '',
-      room_type_id: '',
+      start_time: '',
+      end_time: '',
       additional_equipment: '',
       email: userEmail,
     })
@@ -344,6 +397,75 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
   }
 
   const selectedRoom = availableRooms.find(r => r.id === formData.room_id)
+
+  // Load wallet data
+  useEffect(() => {
+    if (isOpen && user) {
+      getMyWallet()
+        .then((walletData) => {
+          setWallet(walletData || { user_id: user.id, total_points: 0, level: 1, updated_at: new Date().toISOString() })
+        })
+        .catch((err) => {
+          console.error('Error fetching wallet:', err)
+          setWallet({ user_id: user.id, total_points: 0, level: 1, updated_at: new Date().toISOString() })
+        })
+    }
+  }, [isOpen, user])
+
+  // Calculate points required based on booking type and time
+  const calculatePointsRequired = (): number => {
+    if (!formData.booking_date) return 0
+    
+    // If booking type is selected (not hourly), use predefined points
+    if (formData.booking_type && formData.booking_type !== 'hourly') {
+      const selectedType = BOOKING_TYPES.find(t => t.value === formData.booking_type)
+      if (selectedType) {
+        return selectedType.points
+      }
+    }
+    
+    // For hourly booking or custom time
+    if (formData.booking_type === 'hourly' || formData.time_slot) {
+      let startTime = ''
+      let endTime = ''
+      
+      if (formData.booking_type === 'hourly' && formData.start_time && formData.end_time) {
+        startTime = formData.start_time
+        endTime = formData.end_time
+      } else if (formData.time_slot === 'custom' && formData.start_time && formData.end_time) {
+        startTime = formData.start_time
+        endTime = formData.end_time
+      } else if (formData.time_slot && formData.time_slot !== 'custom') {
+        [startTime, endTime] = formData.time_slot.split('-')
+      } else {
+        return 0
+      }
+      
+      try {
+        const [startHour, startMin] = startTime.split(':').map(Number)
+        const [endHour, endMin] = endTime.split(':').map(Number)
+        const [year, month, day] = formData.booking_date.split('-').map(Number)
+        
+        const startDateTime = new Date(year, month - 1, day, startHour, startMin, 0)
+        const endDateTime = new Date(year, month - 1, day, endHour, endMin, 0)
+        
+        if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) return 0
+        if (endDateTime <= startDateTime) return 0
+        
+        const hoursDiff = (endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60 * 60)
+        const bookingHours = Math.ceil(hoursDiff)
+        return bookingHours * 10 // 1 hour = 10 points
+      } catch {
+        return 0
+      }
+    }
+    
+    return 0
+  }
+
+  const pointsRequired = calculatePointsRequired()
+  const availablePoints = wallet?.total_points || 0
+  const hasEnoughPoints = availablePoints >= pointsRequired
 
   // Debug: Log rooms when modal opens
   useEffect(() => {
@@ -533,7 +655,7 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
           </div>
         </div>
 
-        {/* Date and Time */}
+        {/* Date and Booking Type */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -557,27 +679,36 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
               <span className="flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                ช่วงเวลา <span className="text-danger-500">*</span>
+                ประเภทการจอง <span className="text-danger-500">*</span>
               </span>
             </label>
             <select
-              value={formData.time_slot}
-              onChange={(e) => setFormData({ ...formData, time_slot: e.target.value, start_time: '', end_time: '' })}
+              value={formData.booking_type}
+              onChange={(e) => {
+                const selectedType = BOOKING_TYPES.find(t => t.value === e.target.value)
+                setFormData({ 
+                  ...formData, 
+                  booking_type: e.target.value,
+                  time_slot: '',
+                  start_time: selectedType?.value === 'hourly' ? '' : (selectedType?.startTime || ''),
+                  end_time: selectedType?.value === 'hourly' ? '' : (selectedType?.endTime || ''),
+                })
+              }}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              required
             >
-              <option value="">-- เลือกช่วงเวลา --</option>
-              {TIME_SLOTS.map((slot) => (
-                <option key={slot.value} value={slot.value}>
-                  {slot.label}
+              <option value="">-- เลือกประเภทการจอง --</option>
+              {BOOKING_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label} {type.points > 0 ? `(${type.points} แต้ม)` : ''}
                 </option>
               ))}
-              <option value="custom">กำหนดเอง</option>
             </select>
           </div>
         </div>
 
-        {/* Custom Time Input (show when "กำหนดเอง" is selected) */}
-        {formData.time_slot === 'custom' && (
+        {/* Hourly Time Selection (show when "รายชั่วโมง" is selected) */}
+        {formData.booking_type === 'hourly' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -586,13 +717,19 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
                   เวลาเริ่มต้น <span className="text-danger-500">*</span>
                 </span>
               </label>
-              <input
-                type="time"
+              <select
                 value={formData.start_time}
                 onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 required
-              />
+              >
+                <option value="">-- เลือกเวลาเริ่มต้น --</option>
+                {HOURLY_TIME_SLOTS.map((slot) => (
+                  <option key={slot.value} value={slot.value}>
+                    {slot.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -601,22 +738,45 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
                   เวลาสิ้นสุด <span className="text-danger-500">*</span>
                 </span>
               </label>
-              <input
-                type="time"
+              <select
                 value={formData.end_time}
                 onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 required
-              />
+              >
+                <option value="">-- เลือกเวลาสิ้นสุด --</option>
+                {HOURLY_TIME_SLOTS.filter(slot => {
+                  // Only show times after start time
+                  if (!formData.start_time) return true
+                  return slot.value > formData.start_time
+                }).map((slot) => (
+                  <option key={slot.value} value={slot.value}>
+                    {slot.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         )}
 
-        {/* Show selected time slot */}
-        {formData.time_slot && formData.time_slot !== 'custom' && (
-          <div>
-            <p className="text-sm text-gray-600 mt-2">
-              เวลาที่เลือก: {TIME_SLOTS.find(s => s.value === formData.time_slot)?.label}
+        {/* Show selected booking type info */}
+        {formData.booking_type && formData.booking_type !== 'hourly' && (
+          <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">เวลาที่จอง:</span>{' '}
+              {BOOKING_TYPES.find(t => t.value === formData.booking_type)?.startTime} - {BOOKING_TYPES.find(t => t.value === formData.booking_type)?.endTime}
+              {' '}({BOOKING_TYPES.find(t => t.value === formData.booking_type)?.hours} ชั่วโมง)
+            </p>
+          </div>
+        )}
+
+        {/* Show hourly booking summary */}
+        {formData.booking_type === 'hourly' && formData.start_time && formData.end_time && (
+          <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">เวลาที่จอง:</span>{' '}
+              {formData.start_time} - {formData.end_time}
+              {' '}({Math.ceil(parseInt(formData.end_time.split(':')[0]) - parseInt(formData.start_time.split(':')[0]))} ชั่วโมง)
             </p>
           </div>
         )}
@@ -638,12 +798,118 @@ export function BookingModal({ isOpen, onClose, onSuccess, room, rooms, selected
           />
         </div>
 
+        {/* Points System Information */}
+        <div className="p-4 rounded-lg bg-primary-50 border border-primary-200">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-primary-100">
+              <Coins className="w-5 h-5 text-primary-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <Info className="w-4 h-4" />
+                ระบบใช้แต้มในการจองห้อง
+              </h3>
+              
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">แต้มที่มี:</span>
+                  <span className="font-semibold text-gray-900">{formatPoints(availablePoints)} แต้ม</span>
+                </div>
+                
+                {pointsRequired > 0 && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">แต้มที่จะใช้:</span>
+                      <span className={`font-semibold ${hasEnoughPoints ? 'text-primary-600' : 'text-danger-600'}`}>
+                        {formatPoints(pointsRequired)} แต้ม
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">แต้มคงเหลือ:</span>
+                      <span className={`font-semibold ${hasEnoughPoints ? 'text-gray-900' : 'text-danger-600'}`}>
+                        {formatPoints(availablePoints - pointsRequired)} แต้ม
+                      </span>
+                    </div>
+                  </>
+                )}
+                
+                {!hasEnoughPoints && pointsRequired > 0 && (
+                  <div className="mt-3 p-3 rounded-lg bg-danger-50 border-2 border-danger-300 animate-pulse">
+                    <div className="flex items-start gap-2">
+                      <span className="text-2xl">🚫</span>
+                      <div>
+                        <p className="text-sm font-semibold text-danger-700 mb-1">
+                          แต้มไม่เพียงพอ!
+                        </p>
+                        <p className="text-xs text-danger-600 mb-2">
+                          ต้องการ <span className="font-bold">{formatPoints(pointsRequired)}</span> แต้ม 
+                          แต่มีเพียง <span className="font-bold">{formatPoints(availablePoints)}</span> แต้ม
+                        </p>
+                        <p className="text-xs text-danger-600">
+                          ขาดอีก <span className="font-bold text-danger-700">{formatPoints(pointsRequired - availablePoints)}</span> แต้ม
+                        </p>
+                        <div className="mt-2 pt-2 border-t border-danger-200">
+                          <p className="text-xs text-danger-700 font-medium">
+                            💡 ไปเรียนเพิ่มเพื่อสะสมแต้มนะ!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="mt-3 pt-3 border-t border-primary-200">
+                <div className="space-y-1.5 text-xs">
+                  <div className="mb-2">
+                    <p className="font-semibold text-gray-900 mb-1.5">📋 อัตราค่าบริการ:</p>
+                    <div className="space-y-1 ml-2 text-gray-600">
+                      <p>• <span className="font-medium">ทั้งวัน</span> (9:00-18:00) = <span className="font-semibold text-primary-600">80 แต้ม</span></p>
+                      <p>• <span className="font-medium">ครึ่งวันเช้า</span> (9:00-12:00) = <span className="font-semibold text-primary-600">30 แต้ม</span></p>
+                      <p>• <span className="font-medium">ครึ่งวันบ่าย</span> (13:00-18:00) = <span className="font-semibold text-primary-600">50 แต้ม</span></p>
+                      <p>• <span className="font-medium">รายชั่วโมง</span> = 10 แต้ม/ชั่วโมง</p>
+                    </div>
+                  </div>
+                  
+                  <div className="mb-2">
+                    <p className="font-semibold text-gray-900 mb-1.5">📊 ขีดจำกัด:</p>
+                    <div className="space-y-1 ml-2 text-gray-600">
+                      <p>• รายวัน: จองได้ไม่เกิน 8 ชั่วโมงต่อวัน</p>
+                      <p>• รายเดือน: จองได้ไม่เกิน 20 ชั่วโมงต่อเดือน</p>
+                    </div>
+                  </div>
+                  
+                  <div className="mb-2">
+                    <p className="font-semibold text-gray-900 mb-1.5">💰 วิธีหาแต้ม:</p>
+                    <div className="space-y-1 ml-2 text-gray-600">
+                      <p>• จบ 1 บทเรียน (EP) = <span className="font-semibold text-primary-600">10 แต้ม</span></p>
+                      <p>• จบทั้งวิชา = <span className="font-semibold text-primary-600">+50 แต้ม</span></p>
+                      <p>• เรียนต่อเนื่อง = <span className="font-semibold text-primary-600">+40 แต้ม</span></p>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-2 p-2 rounded bg-blue-50 border border-blue-200">
+                    <p className="text-xs text-blue-800">
+                      💡 <strong>คำแนะนำ:</strong> แต้มจะถูกหักเมื่อจองสำเร็จ และจะคืนเมื่อยกเลิกการจอง
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <ModalFooter>
           <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
             ยกเลิก
           </Button>
-          <Button type="submit" loading={loading}>
-            บันทึกการจอง
+          <Button 
+            type="submit" 
+            loading={loading}
+            disabled={loading || (!hasEnoughPoints && pointsRequired > 0)}
+            title={!hasEnoughPoints && pointsRequired > 0 ? 'แต้มไม่เพียงพอ' : ''}
+          >
+            {!hasEnoughPoints && pointsRequired > 0 ? '🚫 แต้มไม่พอ' : 'บันทึกการจอง'}
           </Button>
         </ModalFooter>
       </form>

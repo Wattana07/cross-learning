@@ -190,7 +190,131 @@ Deno.serve(async (req) => {
       });
     }
 
-    // create booking
+    // ============================================
+    // Points System: Calculate hours and points
+    // ============================================
+    const hoursDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60); // hours
+    const bookingHours = Math.ceil(hoursDiff); // Round up
+    const pointsRequired = bookingHours * 10; // 1 hour = 10 points
+
+    // Check user wallet
+    const wallet = await adminClient
+      .from("user_wallet")
+      .select("total_points")
+      .eq("user_id", userId)
+      .single();
+
+    const availablePoints = wallet.data?.total_points || 0;
+
+    if (availablePoints < pointsRequired) {
+      return new Response(JSON.stringify({ 
+        ok: false, 
+        reason: "INSUFFICIENT_POINTS",
+        required: pointsRequired,
+        available: availablePoints,
+        hours: bookingHours
+      }), { 
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+
+    // Check daily limit (8 hours per day)
+    const bookingDateForLimit = new Date(start);
+    bookingDateForLimit.setHours(0, 0, 0, 0);
+    const dateStr = bookingDateForLimit.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const dailyHoursResult = await adminClient.rpc("get_daily_booking_hours", {
+      p_user_id: userId,
+      p_date: dateStr
+    });
+
+    const dailyHours = parseFloat(dailyHoursResult.data || "0");
+    if (dailyHours + bookingHours > 8) {
+      return new Response(JSON.stringify({ 
+        ok: false, 
+        reason: "DAILY_LIMIT_EXCEEDED",
+        current: dailyHours,
+        requested: bookingHours,
+        limit: 8
+      }), { 
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+
+    // Check monthly limit (20 hours per month)
+    const bookingYear = start.getFullYear();
+    const bookingMonth = start.getMonth() + 1; // 1-12
+
+    const monthlyHoursResult = await adminClient.rpc("get_monthly_booking_hours", {
+      p_user_id: userId,
+      p_year: bookingYear,
+      p_month: bookingMonth
+    });
+
+    const monthlyHours = parseFloat(monthlyHoursResult.data || "0");
+    if (monthlyHours + bookingHours > 20) {
+      return new Response(JSON.stringify({ 
+        ok: false, 
+        reason: "MONTHLY_LIMIT_EXCEEDED",
+        current: monthlyHours,
+        requested: bookingHours,
+        limit: 20
+      }), { 
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+
+    // Deduct points
+    console.log('[DEBUG] Deducting points:', { userId, pointsRequired });
+    const deductResult = await adminClient.rpc("wallet_deduct_points", {
+      p_user_id: userId,
+      p_points: pointsRequired
+    });
+    
+    if (deductResult.error) {
+      console.error('[DEBUG] Failed to deduct points:', deductResult.error);
+      return new Response(JSON.stringify({ 
+        ok: false, 
+        reason: "DEDUCT_POINTS_FAIL", 
+        error: deductResult.error.message 
+      }), { 
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+    console.log('[DEBUG] Points deducted successfully');
+
+    // Record point transaction
+    const txResult = await adminClient.from("point_transactions").insert({
+      user_id: userId,
+      rule_key: "booking_use",
+      ref_type: "booking",
+      ref_id: "pending", // Will update after booking is created
+      points: -pointsRequired, // Negative for deduction
+    });
+    
+    if (txResult.error) {
+      console.error('[DEBUG] Failed to record transaction:', txResult.error);
+      // ไม่ return error เพราะแต้มหักไปแล้ว แค่ log ไว้
+    }
+
+    // create booking (ไม่ใส่ points_used เพื่อหลีกเลี่ยง schema cache issue)
+    // แล้วค่อย update ด้วย raw SQL ทีหลัง
     const ins = await adminClient.from("room_bookings").insert({
       room_id: roomId,
       booked_by_user_id: userId,
@@ -199,9 +323,11 @@ Deno.serve(async (req) => {
       start_at: start.toISOString(),
       end_at: end.toISOString(),
       status: "pending",
+      // ไม่ใส่ points_used ตรงนี้ เพราะ schema cache ยังไม่เห็น
     }).select("*").single();
 
     if (ins.error) {
+      console.error('[DEBUG] Insert failed:', ins.error);
       return new Response(JSON.stringify({ ok: false, reason: "INSERT_FAIL", error: ins.error.message }), { 
         status: 200,
         headers: {
@@ -211,10 +337,40 @@ Deno.serve(async (req) => {
       });
     }
 
+    const booking = ins.data;
+
+    // Update points_used ด้วย raw SQL (bypass schema cache)
+    if (booking && booking.id) {
+      await fetch(`${supabaseUrl}/rest/v1/rpc/exec_raw_sql`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          query: `UPDATE public.room_bookings SET points_used = ${pointsRequired} WHERE id = '${booking.id}'`
+        }),
+      }).catch(() => {
+        // ถ้า rpc ไม่มี ก็ข้ามไป - points_used จะเป็น default 0
+        console.log('[DEBUG] exec_raw_sql not available, skipping points_used update');
+      });
+
+      // Update point transaction with booking ID
+      await adminClient
+        .from("point_transactions")
+        .update({ ref_id: booking.id })
+        .eq("user_id", userId)
+        .eq("rule_key", "booking_use")
+        .eq("ref_type", "booking")
+        .eq("ref_id", "pending")
+        .limit(1);
+    }
+
     // Email notifications will be sent when admin approves the booking
     // See notify-booking-approval function
 
-    return new Response(JSON.stringify({ ok: true, booking: ins.data }), {
+    return new Response(JSON.stringify({ ok: true, booking: booking }), {
       headers: { 
         "Content-Type": "application/json",
         'Access-Control-Allow-Origin': '*',

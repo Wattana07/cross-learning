@@ -2,7 +2,7 @@
 
 /* ============================================
    Cross-Learning Platform
-   Color Theme: White & Blue
+   Color Theme: White & Blue with Dark Mode
    ============================================ */
 
 @theme {
@@ -38,6 +38,7 @@
   --color-gray-700: #374151;
   --color-gray-800: #1f2937;
   --color-gray-900: #111827;
+  --color-gray-950: #030712;
 
   /* Fonts */
   --font-sans: 'Inter', 'Noto Sans Thai', system-ui, -apple-system, sans-serif;
@@ -65,6 +66,111 @@ body {
   color: var(--color-gray-900);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ============================================
+   Dark Mode Styles
+   ============================================ */
+html.dark body {
+  background-color: var(--color-gray-950);
+  color: var(--color-gray-100);
+}
+
+/* Dark mode - Cards and containers */
+html.dark .bg-white {
+  background-color: var(--color-gray-900) !important;
+}
+
+html.dark .bg-gray-50 {
+  background-color: var(--color-gray-950) !important;
+}
+
+html.dark .bg-gray-100 {
+  background-color: var(--color-gray-900) !important;
+}
+
+/* Dark mode - Text colors */
+html.dark .text-gray-900 {
+  color: var(--color-gray-100) !important;
+}
+
+html.dark .text-gray-800 {
+  color: var(--color-gray-200) !important;
+}
+
+html.dark .text-gray-700 {
+  color: var(--color-gray-300) !important;
+}
+
+html.dark .text-gray-600 {
+  color: var(--color-gray-400) !important;
+}
+
+html.dark .text-gray-500 {
+  color: var(--color-gray-400) !important;
+}
+
+/* Dark mode - Borders */
+html.dark .border-gray-200 {
+  border-color: var(--color-gray-700) !important;
+}
+
+html.dark .border-gray-300 {
+  border-color: var(--color-gray-600) !important;
+}
+
+/* Dark mode - Inputs */
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: var(--color-gray-800) !important;
+  border-color: var(--color-gray-600) !important;
+  color: var(--color-gray-100) !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: var(--color-gray-500) !important;
+}
+
+/* Dark mode - Hover states */
+html.dark .hover\:bg-gray-50:hover {
+  background-color: var(--color-gray-800) !important;
+}
+
+html.dark .hover\:bg-gray-100:hover {
+  background-color: var(--color-gray-800) !important;
+}
+
+/* Dark mode - Sidebar */
+html.dark aside {
+  background-color: var(--color-gray-900) !important;
+  border-color: var(--color-gray-800) !important;
+}
+
+/* Dark mode - Modals */
+html.dark [role="dialog"] > div {
+  background-color: var(--color-gray-900) !important;
+}
+
+/* Dark mode - Dropdown menus */
+html.dark [role="menu"] {
+  background-color: var(--color-gray-800) !important;
+  border-color: var(--color-gray-700) !important;
+}
+
+/* Dark mode - Scrollbar */
+html.dark ::-webkit-scrollbar-track {
+  background: var(--color-gray-800);
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: var(--color-gray-600);
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gray-500);
 }
 
 /* Custom scrollbar */

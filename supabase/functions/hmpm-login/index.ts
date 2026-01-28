@@ -90,6 +90,22 @@ Deno.serve(async (req) => {
     );
   }
 
+  // ตรวจสอบ headers (สำหรับ debugging)
+  const apikey = req.headers.get("apikey") || req.headers.get("x-api-key");
+  const authHeader = req.headers.get("authorization");
+  const allHeaders = Object.fromEntries(req.headers.entries());
+  
+  console.log(`[${requestId}] Headers check:`, {
+    hasApikey: !!apikey,
+    hasAuthHeader: !!authHeader,
+    apikeyLength: apikey?.length || 0,
+    allHeaders: allHeaders,
+  });
+
+  // หมายเหตุ: Supabase Functions อาจต้องการ apikey header
+  // แต่ถ้าไม่มีก็ยังทำงานได้ (public function)
+  // ถ้า Supabase ต้องการ apikey มันจะ reject ที่ระดับ platform
+
   try {
     console.log(`[${requestId}] Step 1: Loading environment variables...`);
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

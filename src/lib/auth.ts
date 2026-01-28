@@ -83,6 +83,12 @@ export async function signIn(identifier: string, password: string): Promise<void
       mem_id: identifier,
       mem_pass_length: password?.length || 0,
     });
+    console.log('[HMPM Login] Supabase Config:', {
+      url: supabaseUrl,
+      hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+      anonKeyLength: import.meta.env.VITE_SUPABASE_ANON_KEY?.length || 0,
+      anonKeyPrefix: import.meta.env.VITE_SUPABASE_ANON_KEY?.substring(0, 10) || 'N/A',
+    });
     
     const invokeStartTime = Date.now();
     const result = await supabase.functions.invoke('hmpm-login', {
@@ -114,6 +120,13 @@ export async function signIn(identifier: string, password: string): Promise<void
       supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
       hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
     })
+    
+    // ถ้าเป็น 401 Unauthorized
+    if (err?.message?.includes('401') || err?.message?.includes('Unauthorized')) {
+      console.error('[HMPM Login] ❌ 401 Unauthorized - อาจเป็นปัญหา Environment Variables');
+      console.error('[HMPM Login] ตรวจสอบว่า VITE_SUPABASE_ANON_KEY ตั้งค่าใน Vercel แล้วหรือไม่');
+      throw new Error('ไม่สามารถเข้าถึงระบบได้ กรุณาตรวจสอบว่า Environment Variables ตั้งค่าใน Vercel แล้ว (VITE_SUPABASE_ANON_KEY)')
+    }
     
     // ถ้าเป็น network error หรือ Edge Function ไม่พบ
     if (err?.message?.includes('non-2xx') || err?.message?.includes('Failed to fetch') || err?.message?.includes('NetworkError')) {

@@ -59,6 +59,12 @@ export async function signIn(identifier: string, password: string): Promise<void
   let data: any = null
   
   try {
+    // ตรวจสอบว่า Supabase client ถูก initialize ถูกต้อง
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    if (!supabaseUrl) {
+      throw new Error('VITE_SUPABASE_URL ไม่ได้ตั้งค่า กรุณาตรวจสอบ Environment Variables')
+    }
+
     const result = await supabase.functions.invoke('hmpm-login', {
       body: {
         mem_id: identifier,
@@ -69,6 +75,22 @@ export async function signIn(identifier: string, password: string): Promise<void
     data = result.data
   } catch (err: any) {
     fnError = err
+    console.error('HMPM Login Error:', {
+      message: err?.message,
+      error: err,
+      supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+      hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+    })
+    
+    // ถ้าเป็น network error หรือ Edge Function ไม่พบ
+    if (err?.message?.includes('non-2xx') || err?.message?.includes('Failed to fetch') || err?.message?.includes('NetworkError')) {
+      throw new Error('ไม่สามารถเชื่อมต่อกับระบบได้ กรุณาตรวจสอบว่า Edge Function ถูก deploy แล้วหรือติดต่อผู้ดูแลระบบ')
+    }
+    
+    // ถ้าเป็น CORS error
+    if (err?.message?.includes('CORS') || err?.message?.includes('cors')) {
+      throw new Error('เกิดปัญหา CORS กรุณาติดต่อผู้ดูแลระบบ')
+    }
   }
 
   if (fnError || !data?.ok) {
@@ -80,6 +102,8 @@ export async function signIn(identifier: string, password: string): Promise<void
       errorMessage = data?.message || `เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบ HMPM: ${data?.details?.status || 'Unknown'}`
     } else if (data?.error === 'HMPM_MEMBER_ERROR') {
       errorMessage = data?.message || 'รหัสสมาชิกหรือรหัสผ่านไม่ถูกต้อง'
+    } else if (data?.error === 'MISSING_CREDENTIALS') {
+      errorMessage = 'กรุณากรอกรหัสสมาชิกและรหัสผ่าน'
     } else if (data?.message) {
       errorMessage = data.message
     } else if (fnError?.message) {

@@ -58,42 +58,84 @@ export async function signIn(identifier: string, password: string): Promise<void
   let fnError: any = null
   let data: any = null
   
+  const debugInfo = {
+    timestamp: new Date().toISOString(),
+    identifier: identifier,
+    passwordLength: password?.length || 0,
+    supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+    hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+    environment: import.meta.env.MODE,
+  }
+  
+  console.log('[HMPM Login] ========== START ==========');
+  console.log('[HMPM Login] Debug Info:', debugInfo);
+  
   try {
     // ตรวจสอบว่า Supabase client ถูก initialize ถูกต้อง
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
     if (!supabaseUrl) {
+      console.error('[HMPM Login] ❌ VITE_SUPABASE_URL ไม่ได้ตั้งค่า');
       throw new Error('VITE_SUPABASE_URL ไม่ได้ตั้งค่า กรุณาตรวจสอบ Environment Variables')
     }
 
+    console.log('[HMPM Login] Calling Edge Function: hmpm-login');
+    console.log('[HMPM Login] Request body:', {
+      mem_id: identifier,
+      mem_pass_length: password?.length || 0,
+    });
+    
+    const invokeStartTime = Date.now();
     const result = await supabase.functions.invoke('hmpm-login', {
       body: {
         mem_id: identifier,
         mem_pass: password,
       },
     })
+    const invokeDuration = Date.now() - invokeStartTime;
+    
+    console.log('[HMPM Login] Edge Function Response:', {
+      hasError: !!result.error,
+      hasData: !!result.data,
+      dataOk: result.data?.ok,
+      duration: `${invokeDuration}ms`,
+      error: result.error,
+      data: result.data,
+    });
+    
     fnError = result.error
     data = result.data
   } catch (err: any) {
     fnError = err
-    console.error('HMPM Login Error:', {
+    console.error('[HMPM Login] ❌ Exception caught:', {
       message: err?.message,
       error: err,
+      stack: err?.stack,
+      name: err?.name,
       supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
       hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
     })
     
     // ถ้าเป็น network error หรือ Edge Function ไม่พบ
     if (err?.message?.includes('non-2xx') || err?.message?.includes('Failed to fetch') || err?.message?.includes('NetworkError')) {
+      console.error('[HMPM Login] ❌ Network/Connection Error');
       throw new Error('ไม่สามารถเชื่อมต่อกับระบบได้ กรุณาตรวจสอบว่า Edge Function ถูก deploy แล้วหรือติดต่อผู้ดูแลระบบ')
     }
     
     // ถ้าเป็น CORS error
     if (err?.message?.includes('CORS') || err?.message?.includes('cors')) {
+      console.error('[HMPM Login] ❌ CORS Error');
       throw new Error('เกิดปัญหา CORS กรุณาติดต่อผู้ดูแลระบบ')
     }
   }
 
+  console.log('[HMPM Login] Checking response...');
   if (fnError || !data?.ok) {
+    console.error('[HMPM Login] ❌ Login failed:', {
+      fnError: fnError,
+      dataOk: data?.ok,
+      dataError: data?.error,
+      dataMessage: data?.message,
+    });
     let errorMessage = 'ไม่สามารถล็อกอินด้วยบัญชี HMPM ได้'
     
     if (data?.error === 'HMPM_CONFIG_MISSING') {
@@ -115,39 +157,61 @@ export async function signIn(identifier: string, password: string): Promise<void
 
   const supabaseEmail = data.supabase_email as string | undefined
   if (!supabaseEmail) {
+    console.error('[HMPM Login] ❌ No supabase_email in response');
     throw new Error('ไม่พบอีเมลสำหรับ Supabase จาก hmpm-login')
   }
 
+  console.log('[HMPM Login] Step 2: Signing in with Supabase Auth...');
+  console.log('[HMPM Login] Supabase Email:', supabaseEmail);
+  
   // หลังจาก edge function สร้าง/อัปเดตรหัสผ่านแล้ว
   // ใช้ mem_pass (password ของผู้ใช้) เพื่อ sign in เข้าระบบ Supabase
   // Supabase ต้องการ password อย่างน้อย 6 ตัวอักษร
   // Edge function จะปรับ password ให้เป็น 6 ตัวอักษรแล้ว (ถ้าสั้นกว่า)
-  // ต้องใช้ safePassword เหมือนกับที่ Edge Function ใช้
-  // Supabase ต้องการ password อย่างน้อย 6 ตัวอักษร
-  // Edge function จะปรับ password ให้เป็น 6 ตัวอักษรแล้ว (ถ้าสั้นกว่า)
   const safePassword = password.length >= 6 ? password : password + "0".repeat(6 - password.length);
   
+  console.log('[HMPM Login] Password info:', {
+    originalLength: password.length,
+    safeLength: safePassword.length,
+    wasPadded: password.length < 6,
+    passwordHint: data.password_length_hint,
+  });
+  
   // ลอง login ด้วย safePassword ก่อน
+  const signInStartTime = Date.now();
   const { error: authError } = await supabase.auth.signInWithPassword({
     email: supabaseEmail,
     password: safePassword,
+  });
+  const signInDuration = Date.now() - signInStartTime;
+  
+  console.log('[HMPM Login] Sign in result:', {
+    success: !authError,
+    duration: `${signInDuration}ms`,
+    error: authError?.message,
   });
 
   // ถ้า login ไม่สำเร็จด้วย safePassword และ password สั้นกว่า 6 ตัว
   // ลอง login ด้วย password เดิม (กรณี user เก่าที่ยังไม่ได้ update)
   if (authError && password.length < 6) {
+    console.log('[HMPM Login] Safe password failed, trying original password...');
     const { error: originalError } = await supabase.auth.signInWithPassword({
       email: supabaseEmail,
       password: password,
     });
     
     if (originalError) {
+      console.error('[HMPM Login] ❌ Original password also failed:', originalError);
       throw originalError;
     }
+    console.log('[HMPM Login] ✅ Original password succeeded');
     // ถ้า original password สำเร็จ → ไม่ต้อง throw
   } else if (authError) {
+    console.error('[HMPM Login] ❌ Sign in failed:', authError);
     throw authError;
   }
+  
+  console.log('[HMPM Login] ========== SUCCESS ==========');
 }
 
 // Sign out

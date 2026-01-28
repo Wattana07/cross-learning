@@ -60,8 +60,18 @@ const jsonHeaders = {
 };
 
 Deno.serve(async (req) => {
+  const requestId = crypto.randomUUID();
+  const startTime = Date.now();
+  
+  // Debug: Log request start
+  console.log(`[${requestId}] ========== HMPM LOGIN REQUEST START ==========`);
+  console.log(`[${requestId}] Method: ${req.method}`);
+  console.log(`[${requestId}] URL: ${req.url}`);
+  console.log(`[${requestId}] Headers:`, Object.fromEntries(req.headers.entries()));
+  
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
+    console.log(`[${requestId}] CORS preflight request`);
     return new Response("ok", {
       headers: {
         "Access-Control-Allow-Origin": "*",
@@ -73,6 +83,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== "POST") {
+    console.error(`[${requestId}] Invalid method: ${req.method}`);
     return new Response(
       JSON.stringify({ ok: false, error: "METHOD_NOT_ALLOWED" }),
       { status: 405, headers: jsonHeaders },
@@ -80,6 +91,7 @@ Deno.serve(async (req) => {
   }
 
   try {
+    console.log(`[${requestId}] Step 1: Loading environment variables...`);
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -87,19 +99,36 @@ Deno.serve(async (req) => {
     const hmpmAuthUser = Deno.env.get("HMPM_AUTH_USER");
     const hmpmAuthPass = Deno.env.get("HMPM_AUTH_PASS");
 
+    console.log(`[${requestId}] Environment check:`, {
+      hasSupabaseUrl: !!supabaseUrl,
+      hasAnonKey: !!anonKey,
+      hasServiceKey: !!serviceKey,
+      hasHmpmAuthUser: !!hmpmAuthUser,
+      hasHmpmAuthPass: !!hmpmAuthPass,
+    });
+
     if (!hmpmAuthUser || !hmpmAuthPass) {
-      console.error("HMPM_AUTH_USER or HMPM_AUTH_PASS is not set");
+      console.error(`[${requestId}] HMPM_AUTH_USER or HMPM_AUTH_PASS is not set`);
       return new Response(
         JSON.stringify({ ok: false, error: "HMPM_CONFIG_MISSING" }),
         { status: 500, headers: jsonHeaders },
       );
     }
 
+    console.log(`[${requestId}] Step 2: Parsing request body...`);
     const body = (await req.json()) as HmpmLoginBody;
     const memId = body.mem_id?.trim();
     const memPass = body.mem_pass;
+    
+    console.log(`[${requestId}] Request body:`, {
+      mem_id: memId,
+      mem_pass_length: memPass?.length || 0,
+      has_mem_id: !!memId,
+      has_mem_pass: !!memPass,
+    });
 
     if (!memId || !memPass) {
+      console.error(`[${requestId}] Missing credentials:`, { memId: !!memId, memPass: !!memPass });
       return new Response(
         JSON.stringify({ ok: false, error: "MISSING_CREDENTIALS" }),
         { status: 400, headers: jsonHeaders },
@@ -107,13 +136,14 @@ Deno.serve(async (req) => {
     }
 
     // 1) เรียก API แรกเพื่อขอ system access_token
-    // ใช้ URL ตามที่ใช้ใน Postman: {{base_url}}/auth/
+    console.log(`[${requestId}] Step 3: Calling HMPM API 1 (Get Token)...`);
+    console.log(`[${requestId}] API URL: ${HMPM_AUTH_URL}`);
     const tokenBody = new URLSearchParams({
       auth_user: hmpmAuthUser,
       auth_pass: hmpmAuthPass,
     }).toString();
     
-    // เรียก API 1 เพื่อขอ system access_token
+    const api1StartTime = Date.now();
     const tokenRes = await fetch(HMPM_AUTH_URL, {
       method: "POST",
       headers: {
@@ -122,6 +152,14 @@ Deno.serve(async (req) => {
         "Accept": "application/json",
       },
       body: tokenBody,
+    });
+    const api1Duration = Date.now() - api1StartTime;
+    
+    console.log(`[${requestId}] API 1 Response:`, {
+      status: tokenRes.status,
+      statusText: tokenRes.statusText,
+      duration: `${api1Duration}ms`,
+      headers: Object.fromEntries(tokenRes.headers.entries()),
     });
 
     if (!tokenRes.ok) {
@@ -148,9 +186,17 @@ Deno.serve(async (req) => {
     }
 
     const tokenJson = (await tokenRes.json()) as HmpmTokenResponse;
+    
+    console.log(`[${requestId}] API 1 JSON Response:`, {
+      STATUS: tokenJson.STATUS,
+      STATUS_CODE: tokenJson.STATUS_CODE,
+      MESSAGE: tokenJson.MESSAGE,
+      hasAccessToken: !!tokenJson.DATA?.access_token,
+      tokenLength: tokenJson.DATA?.access_token?.length || 0,
+    });
 
     if (tokenJson.STATUS !== "SUCCESS" || !tokenJson.DATA?.access_token) {
-      console.error("HMPM token response error", tokenJson);
+      console.error(`[${requestId}] HMPM token response error:`, tokenJson);
       return new Response(
         JSON.stringify({
           ok: false,
@@ -162,13 +208,19 @@ Deno.serve(async (req) => {
     }
 
     const systemToken = tokenJson.DATA.access_token;
+    console.log(`[${requestId}] Got system token: ${systemToken.substring(0, 20)}...`);
 
     // 2) เรียก API ที่สองเพื่อเช็ค member/ดึง profile
+    console.log(`[${requestId}] Step 4: Calling HMPM API 2 (Get Member)...`);
+    console.log(`[${requestId}] API URL: ${HMPM_MEMBER_URL}`);
+    console.log(`[${requestId}] Member ID: ${memId}`);
+    
     const memberBody = new URLSearchParams({
       mem_id: memId,
       mem_pass: memPass,
     }).toString();
     
+    const api2StartTime = Date.now();
     const memberRes = await fetch(HMPM_MEMBER_URL, {
       method: "POST",
       headers: {
@@ -178,6 +230,14 @@ Deno.serve(async (req) => {
         "Accept": "application/json",
       },
       body: memberBody,
+    });
+    const api2Duration = Date.now() - api2StartTime;
+    
+    console.log(`[${requestId}] API 2 Response:`, {
+      status: memberRes.status,
+      statusText: memberRes.statusText,
+      duration: `${api2Duration}ms`,
+      headers: Object.fromEntries(memberRes.headers.entries()),
     });
 
     if (!memberRes.ok) {
@@ -204,9 +264,18 @@ Deno.serve(async (req) => {
     }
 
     const memberJson = (await memberRes.json()) as HmpmMemberResponse;
+    
+    console.log(`[${requestId}] API 2 JSON Response:`, {
+      STATUS: memberJson.STATUS,
+      STATUS_CODE: memberJson.STATUS_CODE,
+      MESSAGE: memberJson.MESSAGE,
+      hasData: !!memberJson.DATA,
+      mcode: memberJson.DATA?.mcode,
+      name: memberJson.DATA?.name,
+    });
 
     if (memberJson.STATUS !== "SUCCESS" || !memberJson.DATA) {
-      console.error("HMPM member response error", memberJson);
+      console.error(`[${requestId}] HMPM member response error:`, memberJson);
       return new Response(
         JSON.stringify({
           ok: false,
@@ -218,32 +287,56 @@ Deno.serve(async (req) => {
     }
 
     const member = memberJson.DATA;
+    console.log(`[${requestId}] Step 5: Processing member data for mcode: ${member.mcode}`);
 
     // 3) ใช้ service role ของ Supabase เพื่อสร้าง/อัปเดต user & profile
+    console.log(`[${requestId}] Step 6: Initializing Supabase admin client...`);
     const adminClient = createClient(supabaseUrl, serviceKey);
 
     const supabaseEmail = `${member.mcode}@hmpm.local`;
+    console.log(`[${requestId}] Supabase email: ${supabaseEmail}`);
 
     // หา user เดิมจาก email โดย query profiles table ก่อน (เร็วกว่า listUsers)
-    // ถ้าไม่มี profile แสดงว่าไม่มี user
+    console.log(`[${requestId}] Step 7: Checking for existing profile...`);
+    const profileCheckStartTime = Date.now();
     const { data: existingProfile, error: profileCheckError } = await adminClient
       .from("profiles")
       .select("id, email")
       .eq("email", supabaseEmail)
       .maybeSingle();
+    const profileCheckDuration = Date.now() - profileCheckStartTime;
+    
+    console.log(`[${requestId}] Profile check result:`, {
+      found: !!existingProfile,
+      userId: existingProfile?.id,
+      duration: `${profileCheckDuration}ms`,
+      error: profileCheckError?.message,
+    });
 
     let existingUser = null;
     
     // ถ้ามี profile แสดงว่ามี user อยู่แล้ว
     if (existingProfile) {
-      // ดึง user info โดยตรง (เร็วกว่า listUsers)
+      console.log(`[${requestId}] Step 8: Fetching existing user by ID...`);
+      const getUserStartTime = Date.now();
       const { data: userData, error: getUserError } = await adminClient.auth.admin.getUserById(
         existingProfile.id
       );
+      const getUserDuration = Date.now() - getUserStartTime;
+      
+      console.log(`[${requestId}] Get user result:`, {
+        found: !!userData?.user,
+        userId: userData?.user?.id,
+        email: userData?.user?.email,
+        duration: `${getUserDuration}ms`,
+        error: getUserError?.message,
+      });
       
       if (!getUserError && userData?.user) {
         existingUser = userData.user;
       }
+    } else {
+      console.log(`[${requestId}] No existing profile found - will create new user`);
     }
 
     let userId: string;
@@ -260,18 +353,32 @@ Deno.serve(async (req) => {
     };
 
     const safePassword = ensurePasswordLength(memPass);
+    console.log(`[${requestId}] Password info:`, {
+      originalLength: memPass.length,
+      safeLength: safePassword.length,
+      wasPadded: memPass.length < 6,
+    });
 
     if (!existingUser) {
-      // ยังไม่มี user ใน Supabase → สร้างใหม่ โดยใช้ mem_pass เป็น password (ปรับความยาวให้ถูกต้อง)
+      console.log(`[${requestId}] Step 9: Creating new user...`);
+      const createUserStartTime = Date.now();
       const { data: newUser, error: createError } =
         await adminClient.auth.admin.createUser({
           email: supabaseEmail,
           password: safePassword,
           email_confirm: true,
         });
+      const createUserDuration = Date.now() - createUserStartTime;
+
+      console.log(`[${requestId}] Create user result:`, {
+        success: !!newUser?.user,
+        userId: newUser?.user?.id,
+        duration: `${createUserDuration}ms`,
+        error: createError?.message,
+      });
 
       if (createError || !newUser?.user) {
-        console.error("Error creating auth user:", createError);
+        console.error(`[${requestId}] Error creating auth user:`, createError);
         return new Response(
           JSON.stringify({ ok: false, error: "AUTH_CREATE_ERROR", message: createError?.message }),
           { status: 500, headers: jsonHeaders },
@@ -279,21 +386,26 @@ Deno.serve(async (req) => {
       }
 
       userId = newUser.user.id;
+      console.log(`[${requestId}] New user created with ID: ${userId}`);
     } else {
+      console.log(`[${requestId}] Step 9: Updating existing user password (non-blocking)...`);
+      userId = existingUser.id;
       // มี user แล้ว → อัปเดตรหัสผ่านให้ตรงกับ mem_pass ปัจจุบัน (ปรับความยาวให้ถูกต้อง)
       // อัปเดตทุกครั้งที่ login เพื่อให้ password ตรงกับ HMPM เสมอ
       // ทำแบบ non-blocking (ไม่รอผลลัพธ์) เพื่อให้เร็วขึ้น
       adminClient.auth.admin.updateUserById(existingUser.id, {
         password: safePassword,
+      }).then(() => {
+        console.log(`[${requestId}] Password updated successfully`);
       }).catch((err) => {
         // Log error แต่ไม่ block flow
-        console.warn("Password update failed (non-blocking):", err.message);
+        console.warn(`[${requestId}] Password update failed (non-blocking):`, err.message);
       });
-      
-      userId = existingUser.id;
     }
 
     // upsert profile (รวมข้อมูล HMPM)
+    console.log(`[${requestId}] Step 10: Upserting profile...`);
+    const upsertProfileStartTime = Date.now();
     const { error: profileError } = await adminClient.from("profiles").upsert(
       {
         id: userId,
@@ -313,9 +425,16 @@ Deno.serve(async (req) => {
       },
       { onConflict: "id" },
     );
+    const upsertProfileDuration = Date.now() - upsertProfileStartTime;
+    
+    console.log(`[${requestId}] Upsert profile result:`, {
+      success: !profileError,
+      duration: `${upsertProfileDuration}ms`,
+      error: profileError?.message,
+    });
 
     if (profileError) {
-      console.error("Error upserting profile:", profileError);
+      console.error(`[${requestId}] Error upserting profile:`, profileError);
       return new Response(
         JSON.stringify({ ok: false, error: "PROFILE_UPSERT_ERROR" }),
         { status: 500, headers: jsonHeaders },
@@ -323,6 +442,8 @@ Deno.serve(async (req) => {
     }
 
     // ตรวจว่ามีกระเป๋า/สถิติ streak หรือยัง ถ้าไม่มีก็สร้าง (ทำแบบ parallel)
+    console.log(`[${requestId}] Step 11: Checking wallet and streak...`);
+    const walletCheckStartTime = Date.now();
     const [walletResult, streakResult] = await Promise.all([
       adminClient
         .from("user_wallet")
@@ -335,22 +456,41 @@ Deno.serve(async (req) => {
         .eq("user_id", userId)
         .maybeSingle(),
     ]);
+    const walletCheckDuration = Date.now() - walletCheckStartTime;
+    
+    console.log(`[${requestId}] Wallet/Streak check result:`, {
+      hasWallet: !!walletResult.data,
+      hasStreak: !!streakResult.data,
+      duration: `${walletCheckDuration}ms`,
+    });
 
     // สร้าง wallet และ streak แบบ parallel ถ้ายังไม่มี
     const insertPromises: Promise<any>[] = [];
     if (!walletResult.data) {
+      console.log(`[${requestId}] Creating wallet...`);
       insertPromises.push(adminClient.from("user_wallet").insert({ user_id: userId }));
     }
     if (!streakResult.data) {
+      console.log(`[${requestId}] Creating streak...`);
       insertPromises.push(adminClient.from("user_streaks").insert({ user_id: userId }));
     }
     
     if (insertPromises.length > 0) {
+      const insertStartTime = Date.now();
       await Promise.all(insertPromises);
+      const insertDuration = Date.now() - insertStartTime;
+      console.log(`[${requestId}] Created wallet/streak in ${insertDuration}ms`);
     }
 
     // ส่งกลับ safePassword เพื่อให้ frontend ใช้ login
     // แต่ไม่ส่งใน response เพื่อความปลอดภัย (frontend จะคำนวณเอง)
+    const totalDuration = Date.now() - startTime;
+    console.log(`[${requestId}] ========== HMPM LOGIN SUCCESS ==========`);
+    console.log(`[${requestId}] Total duration: ${totalDuration}ms`);
+    console.log(`[${requestId}] User ID: ${userId}`);
+    console.log(`[${requestId}] Email: ${supabaseEmail}`);
+    console.log(`[${requestId}] Member Code: ${member.mcode}`);
+    
     return new Response(
       JSON.stringify({
         ok: true,
@@ -358,13 +498,30 @@ Deno.serve(async (req) => {
         hmpm_profile: member,
         // ส่งกลับ password_length_hint เพื่อให้ frontend รู้ว่าต้องใช้ safePassword
         password_length_hint: memPass.length < 6 ? "padded" : "original",
+        debug: {
+          request_id: requestId,
+          duration_ms: totalDuration,
+        },
       }),
       { status: 200, headers: jsonHeaders },
     );
   } catch (e) {
-    console.error("Unexpected error in hmpm-login:", e);
+    const totalDuration = Date.now() - startTime;
+    console.error(`[${requestId}] ========== HMPM LOGIN ERROR ==========`);
+    console.error(`[${requestId}] Error:`, e);
+    console.error(`[${requestId}] Error message:`, e?.message || String(e));
+    console.error(`[${requestId}] Error stack:`, e?.stack);
+    console.error(`[${requestId}] Total duration before error: ${totalDuration}ms`);
     return new Response(
-      JSON.stringify({ ok: false, error: "INTERNAL_ERROR", detail: String(e) }),
+      JSON.stringify({ 
+        ok: false, 
+        error: "INTERNAL_ERROR", 
+        detail: String(e),
+        debug: {
+          request_id: requestId,
+          duration_ms: totalDuration,
+        },
+      }),
       { status: 500, headers: jsonHeaders },
     );
   }

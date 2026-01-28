@@ -9,6 +9,10 @@ import { LoginPage } from '@/features/auth/LoginPage'
 import { ForgotPasswordPage } from '@/features/auth/ForgotPasswordPage'
 import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage'
 
+// Test pages
+import { HmpmLoginTestPage } from '@/features/test/HmpmLoginTestPage'
+import { HmpmApiTestPage } from '@/features/test/HmpmApiTestPage'
+
 // Learner pages
 import { DashboardPage } from '@/features/learning/pages/DashboardPage'
 import { CategoriesPage } from '@/features/learning/pages/CategoriesPage'
@@ -59,6 +63,14 @@ const router = createBrowserRouter([
   {
     path: '/reset-password',
     element: <ResetPasswordPage />,
+  },
+  {
+    path: '/test-hmpm-login',
+    element: <HmpmLoginTestPage />,
+  },
+  {
+    path: '/test-hmpm-api',
+    element: <HmpmApiTestPage />,
   },
 
   // Protected learner routes

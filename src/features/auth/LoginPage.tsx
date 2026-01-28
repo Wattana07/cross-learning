@@ -67,14 +67,14 @@ export function LoginPage() {
             )}
 
             <Input
-              label="อีเมล"
-              type="email"
-              placeholder="your@email.com"
+              label="อีเมลหรือรหัสสมาชิก"
+              type="text"
+              placeholder="your@email.com หรือรหัสสมาชิก"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               leftIcon={<Mail className="h-5 w-5" />}
               required
-              autoComplete="email"
+              autoComplete="username"
             />
 
             <Input

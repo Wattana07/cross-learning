@@ -1,4 +1,4 @@
-﻿
+
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Card, Badge, Spinner, Button } from '@/components/ui'
@@ -90,13 +90,17 @@ export function EpisodePlayerPage() {
   const { success } = useToast()
   const queryClient = useQueryClient()
 
-  // Helper function to invalidate progress queries
+  // Helper function to invalidate progress-related queries
   const invalidateProgressQueries = () => {
     if (user?.id && subjectId) {
       queryClient.invalidateQueries({ queryKey: ['subjects-progress'] })
       queryClient.invalidateQueries({ queryKey: ['subject-progress', user.id, subjectId] })
       queryClient.invalidateQueries({ queryKey: ['categories-progress'] })
       queryClient.invalidateQueries({ queryKey: ['user-progress'] })
+      // ทำให้หน้า Activity อัปเดตสถิติ / รายการล่าสุด / บุ๊คมาร์ค
+      queryClient.invalidateQueries({ queryKey: ['learning-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['recently-watched'] })
+      queryClient.invalidateQueries({ queryKey: ['bookmarked-subjects'] })
     }
   }
 
@@ -419,7 +423,17 @@ export function EpisodePlayerPage() {
       if (!currentUser || !episodeId) return
 
       try {
-        const savedProgress = await saveEpisodeProgress(episodeId, 100, 0)
+        // ใช้เวลาที่ดูจริง ๆ หรือความยาววิดีโอ แทนการเซฟเป็น 0 วินาที
+        let finalPosition = Math.floor(maxWatchedRef.current || lastPositionRef.current || 0)
+        const player = youtubePlayerRef.current
+        if (player && typeof player.getDuration === 'function') {
+          const duration = player.getDuration()
+          if (duration && duration > 0) {
+            finalPosition = Math.floor(duration)
+          }
+        }
+
+        const savedProgress = await saveEpisodeProgress(episodeId, 100, finalPosition)
         if (savedProgress) {
           setProgress(savedProgress)
           setWatchedPercent(100)
@@ -1025,8 +1039,22 @@ export function EpisodePlayerPage() {
                   if (user && episodeId) {
                     try {
                       console.log('Video ended - marking as completed')
-                      // Mark as 100% completed
-                      const savedProgress = await saveEpisodeProgress(episodeId, 100, 0)
+                      // Mark as 100% completed พร้อมบันทึกเวลาที่ดูจริง ๆ
+                      const videoElement = videoRef.current
+                      let finalPosition = 0
+                      if (videoElement) {
+                        const duration = Math.floor(videoElement.duration || 0)
+                        const currentTime = Math.floor(videoElement.currentTime || 0)
+                        if (duration > 0) {
+                          finalPosition = duration
+                        } else if (currentTime > 0) {
+                          finalPosition = currentTime
+                        } else {
+                          finalPosition = Math.floor(lastPosition || 0)
+                        }
+                      }
+
+                      const savedProgress = await saveEpisodeProgress(episodeId, 100, finalPosition)
                       if (savedProgress) {
                         setProgress(savedProgress)
                         setWatchedPercent(100)
@@ -1042,6 +1070,7 @@ export function EpisodePlayerPage() {
                               streak: result.gainedStreakPoints,
                             })
                             showPointsNotification(result)
+                            invalidateProgressQueries()
                           } else {
                             console.log('Episode completion result:', result.reason || result.error)
                           }

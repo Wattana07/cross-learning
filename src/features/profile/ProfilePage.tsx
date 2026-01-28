@@ -5,7 +5,7 @@ import { Card, Button, Input, Avatar, Badge, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabaseClient'
 import { updateMyProfile, getMyWallet } from '@/lib/auth'
 import { uploadAvatar } from '@/lib/storage'
-import { User, Mail, Building, Save, Camera, X, Trophy, BookOpen } from 'lucide-react'
+import { User, Mail, Building, Save, Camera, X, Trophy, BookOpen, Award, Users, Shield, Calendar, ExternalLink } from 'lucide-react'
 import { cn, formatPoints } from '@/lib/utils'
 import { ChangePasswordForm } from './ChangePasswordForm'
 
@@ -404,6 +404,125 @@ export function ProfilePage() {
           </div>
         </div>
       </Card>
+
+      {/* HMPM Information */}
+      {profile?.hmpm_mcode && (
+        <Card variant="bordered" padding="lg" className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+          <div className="flex items-center gap-2 mb-4">
+            <ExternalLink className="w-5 h-5 text-blue-600" />
+            <h3 className="text-lg font-semibold text-gray-900">ข้อมูลสมาชิก HMPM</h3>
+          </div>
+          
+          <div className="space-y-4">
+            {/* Basic Info */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white rounded-lg p-4 border border-blue-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <User className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm text-gray-600">รหัสสมาชิก</span>
+                </div>
+                <p className="text-lg font-semibold text-gray-900">{profile.hmpm_mcode}</p>
+              </div>
+
+              <div className="bg-white rounded-lg p-4 border border-blue-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm text-gray-600">สถานะสมาชิก</span>
+                </div>
+                <Badge variant={profile.hmpm_member_status === 1 ? 'success' : 'default'} className="text-sm">
+                  {profile.hmpm_member_status === 1 ? 'Active' : 'Inactive'}
+                </Badge>
+              </div>
+
+              {profile.hmpm_expire && (
+                <div className="bg-white rounded-lg p-4 border border-blue-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-gray-600">วันหมดอายุ</span>
+                  </div>
+                  <p className="text-sm font-medium text-gray-900">
+                    {new Date(profile.hmpm_expire).toLocaleDateString('th-TH', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    })}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Position Current */}
+            {profile.hmpm_pos_cur && typeof profile.hmpm_pos_cur === 'object' && (
+              <div className="bg-white rounded-lg p-4 border border-blue-100">
+                <div className="flex items-center gap-2 mb-3">
+                  <Award className="w-5 h-5 text-blue-600" />
+                  <span className="font-semibold text-gray-900">ตำแหน่งปัจจุบัน</span>
+                </div>
+                <div className="space-y-2">
+                  {profile.hmpm_pos_cur.POS_NAME && (
+                    <p className="text-lg font-semibold text-gray-900">{profile.hmpm_pos_cur.POS_NAME}</p>
+                  )}
+                  {profile.hmpm_pos_cur.POS_SHORT && (
+                    <Badge variant="default" className="text-xs">
+                      {profile.hmpm_pos_cur.POS_SHORT}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Honor Position */}
+            {profile.hmpm_honor && typeof profile.hmpm_honor === 'object' && (
+              <div className="bg-white rounded-lg p-4 border border-blue-100">
+                <div className="flex items-center gap-2 mb-3">
+                  <Trophy className="w-5 h-5 text-yellow-600" />
+                  <span className="font-semibold text-gray-900">ตำแหน่งเกียรติ</span>
+                </div>
+                <div className="space-y-2">
+                  {profile.hmpm_honor.POS_NAME && (
+                    <p className="text-lg font-semibold text-gray-900">{profile.hmpm_honor.POS_NAME}</p>
+                  )}
+                  {profile.hmpm_honor.POS_SHORT && (
+                    <Badge variant="default" className="text-xs bg-yellow-100 text-yellow-800">
+                      {profile.hmpm_honor.POS_SHORT}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Member Groups */}
+            {profile.hmpm_member_group && profile.hmpm_member_group.length > 0 && (
+              <div className="bg-white rounded-lg p-4 border border-blue-100">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="w-5 h-5 text-blue-600" />
+                  <span className="font-semibold text-gray-900">กลุ่มสมาชิก</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {profile.hmpm_member_group.map((group, idx) => (
+                    <Badge key={idx} variant="default" className="text-sm">
+                      {group}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Raw Data (Collapsible) */}
+            {profile.hmpm_raw && (
+              <details className="bg-white rounded-lg p-4 border border-blue-100">
+                <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900 flex items-center gap-2">
+                  <ExternalLink className="w-4 h-4" />
+                  ดูข้อมูลทั้งหมด (JSON)
+                </summary>
+                <pre className="mt-3 p-3 bg-gray-50 rounded text-xs overflow-auto max-h-60 border border-gray-200">
+                  {JSON.stringify(profile.hmpm_raw, null, 2)}
+                </pre>
+              </details>
+            )}
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

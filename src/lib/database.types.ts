@@ -31,6 +31,13 @@ export interface Database {
           is_active: boolean
           created_at: string
           updated_at: string
+          hmpm_mcode: string | null
+          hmpm_member_group: string[] | null
+          hmpm_pos_cur: Json | null
+          hmpm_honor: Json | null
+          hmpm_member_status: number | null
+          hmpm_expire: string | null
+          hmpm_raw: Json | null
         }
         Insert: {
           id: string
@@ -42,6 +49,13 @@ export interface Database {
           is_active?: boolean
           created_at?: string
           updated_at?: string
+          hmpm_mcode?: string | null
+          hmpm_member_group?: string[] | null
+          hmpm_pos_cur?: Json | null
+          hmpm_honor?: Json | null
+          hmpm_member_status?: number | null
+          hmpm_expire?: string | null
+          hmpm_raw?: Json | null
         }
         Update: {
           id?: string
@@ -53,6 +67,13 @@ export interface Database {
           is_active?: boolean
           created_at?: string
           updated_at?: string
+          hmpm_mcode?: string | null
+          hmpm_member_group?: string[] | null
+          hmpm_pos_cur?: Json | null
+          hmpm_honor?: Json | null
+          hmpm_member_status?: number | null
+          hmpm_expire?: string | null
+          hmpm_raw?: Json | null
         }
       }
       categories: {

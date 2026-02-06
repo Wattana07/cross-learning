@@ -40,11 +40,12 @@ export function Modal({
       />
 
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
         <div
           className={cn(
             'w-full bg-white rounded-2xl shadow-modal',
             'animate-in fade-in-0 zoom-in-95 duration-200',
+            'my-8 max-h-[calc(100vh-4rem)] overflow-y-auto',
             sizes[size]
           )}
           onClick={(e) => e.stopPropagation()}
